@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="余奕辰的 vLLM-Omni 开源贡献与工程研究档案。" />
+    <title>余奕辰 · Engineering notes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="assets/style.css" />
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+    <header class="site-header">
+      <a class="wordmark" href="#top" aria-label="回到首页">YC<span>·</span>LAB</a>
+      <nav aria-label="主导航">
+        <a href="#map">贡献地图</a>
+        <a href="#work">精选工作</a>
+        <a href="#about">方法</a>
+      </nav>
+      <a class="header-link" href="https://github.com/princepride" target="_blank" rel="noreferrer">GitHub ↗</a>
+    </header>
+
+    <main id="top">
+      <section class="hero section-shell">
+        <p class="eyebrow"><span class="pulse"></span> OPEN-SOURCE ENGINEERING LOG · 2026</p>
+        <div class="hero-grid">
+          <div>
+            <h1>让复杂的<br /><em>多模态推理</em><br />变得可运行。</h1>
+            <p class="hero-copy">余奕辰 · 围绕分布式推理、扩散模型服务与多阶段运行时的工程探索。这不是简历，而是一份可追溯的构建档案。</p>
+            <div class="hero-actions">
+              <a class="button button-dark" href="#map">进入贡献地图 <span>↓</span></a>
+              <a class="text-link" href="#work">查看案例 <span>↘</span></a>
+            </div>
+          </div>
+          <aside class="hero-note">
+            <div class="note-top"><span>NOW EXPLORING</span><span>01—03</span></div>
+            <div class="signal"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <p>从模型算子、并行切分到服务调度：把“能跑”推进到“可验证、可维护、可讨论”。</p>
+            <div class="note-meta"><span>vLLM-Omni</span><span>PUBLIC CONTRIBUTIONS</span></div>
+          </aside>
+        </div>
+        <div class="hero-footer"><span>SCROLL TO TRACE THE WORK</span><span>↓</span><span>SHANGHAI · CN</span></div>
+      </section>
+
+      <section class="map-section" id="map">
+        <div class="section-shell">
+          <div class="section-heading">
+            <p class="eyebrow">01 / CONTRIBUTION MAP</p>
+            <h2>从问题出发，<br />连接到系统的每一层。</h2>
+            <p>拖拽节点，或选择一个方向查看它与具体 PR 的关联。</p>
+          </div>
+          <div class="constellation" id="constellation" aria-label="vLLM-Omni 贡献关系图">
+            <svg class="links" viewBox="0 0 1000 560" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M 500 280 L 230 130 M 500 280 L 185 400 M 500 280 L 730 125 M 500 280 L 820 385 M 500 280 L 500 505" />
+            </svg>
+            <button class="map-node node-core active" data-filter="all" style="--x:50%;--y:50%"><b>01</b><span>vLLM‑Omni<br />贡献档案</span></button>
+            <button class="map-node node-sp" data-filter="parallel" style="--x:23%;--y:23%"><b>02</b><span>Sequence<br />Parallelism</span></button>
+            <button class="map-node node-runtime" data-filter="runtime" style="--x:18.5%;--y:72%"><b>03</b><span>Stage Runtime<br />&amp; RL</span></button>
+            <button class="map-node node-batch" data-filter="batching" style="--x:73%;--y:22%"><b>04</b><span>Continuous<br />Batching</span></button>
+            <button class="map-node node-model" data-filter="models" style="--x:82%;--y:69%"><b>05</b><span>Model<br />Integration</span></button>
+            <button class="map-node node-proof" data-filter="validation" style="--x:50%;--y:90%"><b>06</b><span>Validation &amp;<br />Benchmarks</span></button>
+            <div class="map-caption" id="map-caption">选择节点，筛选相关的工程案例。</div>
+          </div>
+          <div class="legend"><span><i class="dot lime"></i> 已合并</span><span><i class="dot orange"></i> 设计/探索</span><span><i class="dot blue"></i> 模型与运行时</span></div>
+        </div>
+      </section>
+
+      <section class="work-section section-shell" id="work">
+        <div class="work-intro">
+          <p class="eyebrow">02 / SELECTED WORK</p>
+          <h2>工程工作，不只展示结果，<br />也展示判断过程。</h2>
+          <p>每个案例都保留真实 PR、验证边界与关键取舍。点击卡片进入过程页。</p>
+        </div>
+        <div class="project-list">
+          <a class="project-card featured" data-tags="parallel validation models" href="case-sequence-parallelism.html">
+            <div class="project-index">01</div>
+            <div class="project-main">
+              <p class="project-kicker">DISTRIBUTED INFERENCE · MERGED</p>
+              <h3>BAGEL 的<br />序列并行支持</h3>
+              <p>为扩散 Transformer 接入 Ulysses、Ring 与混合并行，并处理多阶段 KV cache 与 VAE token 的跨 rank 协作。</p>
+              <span class="project-open">阅读过程 <b>↗</b></span>
+            </div>
+            <div class="project-visual visual-parallel" aria-hidden="true">
+              <div class="chip chip-one">R0</div><div class="chip chip-two">R1</div><div class="chip chip-three">R2</div><div class="chip chip-four">R3</div>
+              <svg viewBox="0 0 360 220"><path d="M72 52 C155 18 210 28 286 68 M72 52 C132 125 219 145 286 68 M72 165 C145 110 215 110 286 68 M72 165 C110 195 235 195 286 68" /></svg>
+              <span class="visual-label">TOKEN / KV / VAE</span>
+            </div>
+            <div class="project-meta"><span>PR #1903</span><span>615 ++ / 13 --</span><span>11 FILES</span></div>
+          </a>
+
+          <a class="project-card" data-tags="batching runtime validation models" href="case-continuous-batching.html">
+            <div class="project-index">02</div>
+            <div class="project-main">
+              <p class="project-kicker">SCHEDULER CONTROL · MERGED</p>
+              <h3>MiniMax‑H3<br />连续批处理</h3>
+              <p>把端到端 denoise loop 拆为 step-execution 合约，并用真实 profiling 明确它带来的调度价值与性能边界。</p>
+              <span class="project-open">阅读过程 <b>↗</b></span>
+            </div>
+            <div class="project-visual visual-batch" aria-hidden="true"><span>REQUEST A</span><span>REQUEST B</span><span>REQUEST C</span><b>ONE FORWARD</b></div>
+            <div class="project-meta"><span>PR #5810</span><span>1834 ++ / 140 --</span><span>15 FILES</span></div>
+          </a>
+
+          <a class="project-card" data-tags="runtime validation" href="https://github.com/vllm-project/vllm-omni/pull/6355" target="_blank" rel="noreferrer">
+            <div class="project-index">03</div>
+            <div class="project-main">
+              <p class="project-kicker orange-text">RL INTERFACE · EXPLORATION</p>
+              <h3>面向多阶段运行时的<br />RL HTTP 接口</h3>
+              <p>探索将 RL 工作流接入 stage-aware runtime 的接口边界与测试路径；此 PR 未合并，作为设计探索记录保留。</p>
+              <span class="project-open">打开原始 PR <b>↗</b></span>
+            </div>
+            <div class="project-visual visual-runtime" aria-hidden="true"><i>REQUEST</i><i>STAGE 0</i><i>STAGE 1</i><i>ROLLOUT</i></div>
+            <div class="project-meta"><span>PR #6355</span><span>1697 ++ / 64 --</span><span>20 FILES</span></div>
+          </a>
+        </div>
+      </section>
+
+      <section class="method-section" id="about">
+        <div class="section-shell method-grid">
+          <div><p class="eyebrow">03 / WORKING METHOD</p><h2>先让系统可见，<br />再让结论可信。</h2></div>
+          <ol>
+            <li><span>01</span><div><h3>定位真实瓶颈</h3><p>从请求路径、张量形状与运行时约束出发，不把理论收益当作系统收益。</p></div></li>
+            <li><span>02</span><div><h3>保持接口可演进</h3><p>以窄而明确的合约连接模型、调度器与多阶段运行时，降低跨层改动的耦合。</p></div></li>
+            <li><span>03</span><div><h3>用证据约束结论</h3><p>正确性、profiling 和端到端压测都被写进交付物；负结果同样是有效结论。</p></div></li>
+          </ol>
+        </div>
+      </section>
+    </main>
+    <footer><span>YC·LAB / 2026</span><span>BUILT AS A PUBLIC ENGINEERING ARCHIVE</span><a href="https://github.com/princepride" target="_blank" rel="noreferrer">GITHUB ↗</a></footer>
+    <script src="assets/app.js"></script>
+  </body>
+</html>
