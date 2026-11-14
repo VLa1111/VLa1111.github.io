@@ -1,8 +1,142 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>余奕辰 | Infra notebook</title><meta name="description" content="余奕辰的多模态推理基础设施、端侧部署与科研项目经历。"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="assets/style.css"></head><body>
-<header class="mobile-top"><a href="index.html">余奕辰</a><button id="panel-toggle">目录</button></header><div class="app-shell">
-<aside class="sidebar" id="sidebar"><a class="identity" href="index.html"><span class="avatar">YC</span><span><b>余奕辰</b><small>Infra notebook</small></span></a><p class="availability"><i></i> Available for 2027 graduate roles</p><nav class="tree"><p>OVERVIEW</p><a class="active" href="index.html"><span>⌘</span>个人概览</a><p>EXPERIENCE</p><a href="experiences/vllm-omni.html"><span>01</span>vLLM-Omni</a><a href="experiences/edge-inference.html"><span>02</span>端侧推理 infra</a><a href="experiences/research.html"><span>03</span>ExpRL 科研</a></nav><div class="sidebar-bottom"><p>LINKS</p><a href="https://github.com/VLa1111" target="_blank">GitHub ↗</a><a href="mailto:vyu112@foxmail.com">vyu112@foxmail.com</a></div></aside>
-<main class="workspace"><div class="breadcrumb">~/profile / <b>overview.md</b></div><section class="intro"><p class="label">HELLO, I'M</p><h1>余奕辰</h1><p class="headline">面向多模态推理与端侧部署的<br><strong>基础设施工程师。</strong></p><p class="summary">目前在哈尔滨工程大学控制科学与工程专业攻读硕士，关注模型推理性能、内存约束下的部署，以及将实验结论变成可复现工程改动。</p><div class="chips"><span>CUDA / PyTorch</span><span>Inference systems</span><span>Quantization</span><span>Edge AI</span></div></section>
-<section class="content-section"><div class="section-title"><span>01</span><h2>工作关注点</h2></div><div class="focus-grid"><article><b>01</b><h3>推理路径</h3><p>定位 batch、CUDA Graph、模型阶段与数据形状之间的真实性能约束。</p></article><article><b>02</b><h3>显存约束</h3><p>通过 offload、量化、slicing/tiling 与计算图改造，把大模型带到受限设备上。</p></article><article><b>03</b><h3>证据优先</h3><p>把回归测试、benchmark 与 profiling 作为工程交付的一部分。</p></article></div></section>
-<section class="content-section"><div class="section-title"><span>02</span><h2>经历索引</h2><small>点击条目，在右侧展开摘要；进入子页查看技术细节。</small></div><div class="experience-list"><button class="experience active" data-target="omni"><span class="date">2026.08 — now</span><span class="exp-title"><b>vLLM-Omni · 多模态推理优化</b><small>Contributor · DiT memory / batching / benchmark</small></span><span class="open">↗</span></button><button class="experience" data-target="edge"><span class="date">2026.06 — 09</span><span class="exp-title"><b>海康威视研究院 · 高性能计算部</b><small>端侧 infra / 异构推理 / NPU 量化</small></span><span class="open">↗</span></button><button class="experience" data-target="research"><span class="date">2026.04 — now</span><span class="exp-title"><b>ExpRL · 无人机自主探索</b><small>决策模型 / 并行采集 / Jetson 部署</small></span><span class="open">↗</span></button><button class="experience" data-target="momenta"><span class="date">2025.12 — 2026.04</span><span class="exp-title"><b>Momenta · 泊车感知算法</b><small>离线评测 / 数据闭环 / APA Parking Fusion</small></span><span class="open">↗</span></button></div></section>
-<section class="content-section compact"><div class="section-title"><span>03</span><h2>教育与工具</h2></div><div class="two-col"><div><p class="label">EDUCATION</p><b>哈尔滨工程大学</b><p>控制科学与工程 · 硕士（保研）<br>2024.09 — 至今</p><b>西南石油大学</b><p>电气工程与智能控制 · 学士<br>2020.09 — 2024.06 · 专业前 3%</p></div><div><p class="label">TOOLBOX</p><p>Linux · Python · C/C++ · CUDA · OpenCL · PyTorch · Docker · Git · vLLM</p><p>nsys · ncu · TensorRT · CUDA Graph · Isaac Sim · ONNX Runtime</p></div></div></section><footer>© 2026 Yichen Yu · Built as a technical portfolio</footer></main>
-<aside class="detail-panel" id="detail-panel"><div class="panel-head"><span>CONTEXT</span><button id="close-panel">×</button></div><div class="panel-content" data-panel="omni"><p class="label">SELECTED EXPERIENCE / 01</p><h2>vLLM-Omni<br>多模态推理优化</h2><p>围绕扩散模型服务中的显存、batching 与可观测性开展开源贡献。</p><dl><div><dt>已合并</dt><dd>VAE slicing / tiling；TTS benchmark 指标</dd></div><div><dt>进行中</dt><dd>长度感知组批；CPU offload</dd></div></dl><a class="panel-link" href="experiences/vllm-omni.html">打开技术档案 →</a></div><div class="panel-content hidden" data-panel="edge"><p class="label">SELECTED EXPERIENCE / 02</p><h2>端侧推理<br>与 NPU 部署</h2><p>在受限算力与精度约束下，完成业务模型的量化部署、计算图优化和移动 GPU Kernel 调优。</p><dl><div><dt>31</dt><dd>个业务模型端侧 NPU 部署</dd></div><div><dt>1.32–1.44×</dt><dd>NMS Kernel 满载稳定加速</dd></div></dl><a class="panel-link" href="experiences/edge-inference.html">打开技术档案 →</a></div><div class="panel-content hidden" data-panel="research"><p class="label">SELECTED EXPERIENCE / 03</p><h2>ExpRL<br>自主探索</h2><p>从自监督价值预训练到多卡采集，再到 Jetson 上的端侧决策链路优化。</p><dl><div><dt>18×</dt><dd>多卡采集效率提升</dd></div><div><dt>1.5–3 ms</dt><dd>Jetson Orin NX 单决策耗时</dd></div></dl><a class="panel-link" href="experiences/research.html">打开技术档案 →</a></div><div class="panel-content hidden" data-panel="momenta"><p class="label">SELECTED EXPERIENCE / 04</p><h2>泊车感知<br>算法与评测</h2><p>参与 APA Parking Fusion 的业务逻辑开发，并建立评测 checker 和数据清洗规则以支持问题闭环。</p><dl><div><dt>63</dt><dd>组机械车位 FN 数据回归</dd></div><div><dt>覆盖</dt><dd>业务开发、评测与数据闭环</dd></div></dl></div></aside></div><script src="assets/app.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>余奕辰 · 过往经历</title>
+  <meta name="description" content="余奕辰的科研与开源经历：vLLM-Omni 贡献、端侧 NPU 部署、ExpRL 无人机探索。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/home.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="#top">余奕辰</a>
+    <nav>
+      <a href="#experience">经历</a>
+      <a href="#skills">技能</a>
+      <a href="#education">教育</a>
+      <a href="#contact">联系</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <p class="kicker">MASTER'S · HARBIN ENGINEERING UNIVERSITY</p>
+      <h1>余奕辰</h1>
+      <p class="lede">关注大模型推理性能与端侧部署。做过扩散模型服务的显存与调度优化，也做过 31 个模型的 NPU 落地。</p>
+      <p class="meta">求职方向：推理优化 / 量化部署</p>
+      <a class="btn" href="#experience">看经历</a>
+      <a class="btn ghost" href="https://github.com/VLa1111" target="_blank" rel="noreferrer">GitHub ↗</a>
+    </section>
+
+    <section class="block" id="experience">
+      <h2><span>01</span>经历</h2>
+      <ol class="timeline">
+
+        <li class="item">
+          <div class="when">2025.12 — 2026.04</div>
+          <div>
+            <h3>Momenta · 泊车感知算法</h3>
+            <p class="role">算法开发 · 离线评测 · 数据闭环</p>
+            <ul class="bullets">
+              <li>参与 APA Parking Fusion 模块，设计 IOU/Track ID 匹配与记忆触发逻辑，降低障碍物闪现/消失对规划的扰动。</li>
+              <li>开发车位感知误检/漏检 Checker，按车位类型拆分指标；完成 63 组机械车位 FN 回归。</li>
+              <li>开发真值清洗脚本，清理影响障碍物评测置信度的脏数据。</li>
+            </ul>
+          </div>
+        </li>
+
+        <li class="item" id="vllm-omni">
+          <div class="when">开源贡献</div>
+          <div>
+            <h3>vLLM-Omni · 多模态推理优化</h3>
+            <p class="role">社区 contributor · DiT 显存 / 动态 batching / 性能分析</p>
+            <ul class="prs">
+              <li><span class="tag ok">MERGED</span><a href="https://github.com/vllm-project/vllm-omni/pull/7774" target="_blank" rel="noreferrer">#7774</a> VAE slicing / tiling 接通 DiT 解码，3072² tiling 峰值显存 22.1 → 2.7 GB</li>
+              <li><span class="tag ok">MERGED</span><a href="https://github.com/vllm-project/vllm-omni/pull/6577" target="_blank" rel="noreferrer">#6577</a> TTS 并发 benchmark 增加首音延迟 P50 / P99</li>
+              <li><span class="tag open">OPEN</span><a href="https://github.com/vllm-project/vllm-omni/pull/9040" target="_blank" rel="noreferrer">#9040</a> 按 prompt 长度组批，保住 CUDA Graph 路径，混合长度文生图吞吐 +19.8%</li>
+              <li><span class="tag open">OPEN</span><a href="https://github.com/vllm-project/vllm-omni/pull/6897" target="_blank" rel="noreferrer">#6897</a> 12 GB 显存预算内运行 34.6 GB 文生图模型，modelwise / layerwise CPU offload，峰值 11.5 GiB</li>
+            </ul>
+            <a class="inline" href="experiences/vllm-omni.html">查看技术细节 →</a>
+            <a class="inline" href="experiences/vae-tiling.html">交互：#7774 显存排查 →</a>
+            <a class="inline" href="experiences/qwen-image-2-1.html">交互：#9040 组批 →</a>
+          </div>
+        </li>
+
+        <li class="item">
+          <div class="when">2026.06 — 2026.09</div>
+          <div>
+            <h3>海康威视研究院 · 高性能计算部</h3>
+            <p class="role">端侧推理 · NPU 量化 · 算子优化</p>
+            <ul class="bullets">
+              <li>完成 31 个业务模型的端侧 NPU 部署，INT8 量化后板端平均余弦提升至 0.99。</li>
+              <li>OCR INT8 Decoder 的 ConvTranspose 替换为等价算子链，整体余弦由 0.68 提升至 0.99。</li>
+              <li>NMS 算子 float4 向量装载 + 面积预计算，Mali-G57 / Adreno642L 板端满载 1.32–1.44× 加速。</li>
+            </ul>
+            <a class="inline" href="experiences/edge-inference.html">查看技术细节 →</a>
+          </div>
+        </li>
+
+        <li class="item">
+          <div class="when">2026.04 — 至今</div>
+          <div>
+            <h3>ExpRL · 基于自监督价值预训练的无人机自主探索</h3>
+            <p class="role">科研项目 · 决策模型 · 数采框架 · 端侧部署</p>
+            <ul class="bullets">
+              <li>设计空间 token + 多层 CA/SA 的决策模型，覆盖率稳定 92.8%。</li>
+              <li>Isaac Sim 多卡并行采集（16 worker × 8 env），相比单卡效率提升 18 倍，累计 8960 条样本。</li>
+              <li>TensorRT + CUDA Graph 捕获预处理到推理全链路，Jetson Orin NX 单决策由约 15 ms 降至 1.5–3 ms。</li>
+            </ul>
+            <a class="inline" href="experiences/research.html">查看技术细节 →</a>
+          </div>
+        </li>
+
+      </ol>
+    </section>
+
+    <section class="block" id="skills">
+      <h2><span>02</span>技能</h2>
+      <div class="grid3">
+        <article>
+          <h3>推理系统</h3>
+          <p>CUDA Graph、batching、profiling（nsys / ncu），vLLM 与扩散模型服务。</p>
+        </article>
+        <article>
+          <h3>量化与部署</h3>
+          <p>INT8 校准、ONNX 转换、NPU 板端部署与精度比对，TensorRT。</p>
+        </article>
+        <article>
+          <h3>语言与框架</h3>
+          <p>Python、C/C++、CUDA、OpenCL、PyTorch、Docker、Git，熟悉 Isaac Sim。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="block" id="education">
+      <h2><span>03</span>教育</h2>
+      <div class="edu">
+        <div>
+          <b>哈尔滨工程大学</b>
+          <p>控制科学与工程 · 硕士（保研）· 2024.09 — 至今</p>
+          <p>共一发表 IEEE-IROS 会议论文一篇，期刊在投一篇。</p>
+        </div>
+        <div>
+          <b>西南石油大学</b>
+          <p>电气工程与智能控制 · 学士 · 2020.09 — 2024.06</p>
+          <p>专业排名前 3%。全国大学生光电设计竞赛西南赛区一等奖。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="contact" id="contact">
+      <h2 class="mono">04 · 联系</h2>
+      <p>邮箱：<a href="mailto:vyu112@foxmail.com">vyu112@foxmail.com</a></p>
+      <p>GitHub：<a href="https://github.com/VLa1111" target="_blank" rel="noreferrer">github.com/VLa1111</a></p>
+    </section>
+  </main>
+
+  <footer>© 2026 余奕辰</footer>
+</body>
+</html>

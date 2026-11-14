@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VAE Tiling · 余奕辰</title>
+  <meta name="description" content="vLLM-Omni PR #7774：把 VAE slicing / tiling 接通到真正执行解码的 VAE，3072² 解码峰值显存 22.1 → 2.7 GB。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/home.css">
+  <style>
+    .step { padding: 56px 0; border-bottom: 1px solid var(--line); }
+    .step h2 { margin: 6px 0 12px; font-size: 26px; line-height: 1.35; }
+    .step > p { max-width: 680px; color: var(--muted); }
+    .panel { margin-top: 24px; padding: 24px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; }
+    .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin-bottom: 20px; }
+    .seg button { font: 13px var(--mono); padding: 8px 14px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+    .seg button + button { border-left: 1px solid var(--line); }
+    .seg button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+
+    /* step 1: config flow */
+    .flow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .node { padding: 12px 14px; border: 1px solid var(--line); border-radius: 6px; font: 13px var(--mono); background: var(--bg); transition: background .25s, border-color .25s, opacity .25s; }
+    .node.hit { background: var(--ok-bg); border-color: var(--ok); color: var(--ok); }
+    .node.miss { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+    .node.dim { opacity: .45; }
+    .arrow { color: var(--muted); font-family: var(--mono); }
+    .verdict { margin: 18px 0 0; font-size: 15px; }
+
+    /* step 2: tiling animation */
+    .tile-wrap { display: grid; grid-template-columns: minmax(0, 300px) 1fr; gap: 28px; align-items: center; }
+    .grid { display: grid; gap: 3px; aspect-ratio: 1; background: var(--line); padding: 3px; border-radius: 6px; }
+    .grid i { background: #dfe6f3; border-radius: 2px; transition: background .15s; }
+    .grid i.active { background: var(--accent); }
+    .grid i.done { background: #9fb6e6; }
+    .meter { height: 18px; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+    .meter div { height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+    .meter.full div { background: var(--warn); }
+    .caption { font: 12px var(--mono); color: var(--muted); margin: 8px 0 16px; }
+    .btn-sm { font: 13px var(--mono); padding: 8px 14px; border: 1px solid var(--line); background: var(--ink); color: #fff; border-radius: 6px; cursor: pointer; }
+
+    /* step 3: results */
+    .bars { display: grid; gap: 12px; }
+    .bar { display: grid; grid-template-columns: 110px 1fr 70px; gap: 12px; align-items: center; font: 13px var(--mono); }
+    .bar .t { height: 22px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+    .bar .f { height: 100%; background: var(--muted); transition: width .4s; }
+    .bar .f.on { background: var(--accent); }
+    .bar b { text-align: right; }
+    .delta { margin-top: 18px; font: 500 34px var(--mono); color: var(--accent); }
+
+    .back { display: inline-block; margin: 0 18px 0 0; font-size: 14px; }
+    @media (max-width: 760px) {
+      .tile-wrap { grid-template-columns: 1fr; }
+      .bar { grid-template-columns: 80px 1fr 60px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="../index.html">余奕辰</a>
+    <nav>
+      <a href="../index.html#experience">经历</a>
+      <a href="vllm-omni.html">vLLM-Omni</a>
+      <a href="https://github.com/vllm-project/vllm-omni/pull/7774" target="_blank" rel="noreferrer">PR ↗</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="kicker">VLLM-OMNI · PR #7774 · MERGED</p>
+      <h1 style="font-size:clamp(32px,5vw,48px)">开关打开了，<br>显存却没降。</h1>
+      <p class="lede">MammothModa2 在 DiT 解码阶段配置了 VAE slicing / tiling，但峰值显存没有变化。这一页按排查顺序走一遍：配置停在了哪里，tiling 为什么能省显存，以及实测结果。</p>
+      <p class="meta">3072² 解码 · tiling 峰值显存 22.1 → 2.7 GB</p>
+    </section>
+
+    <section class="step">
+      <p class="kicker">01 · 配置停在了哪一层</p>
+      <h2>通用配置抵达了 DIFFUSION stage，<br>但没有传给真正做解码的 <code>gen_vae</code>。</h2>
+      <p>这个 pipeline 把执行解码的 VAE 放在私有成员里。框架按标准方式处理 slicing / tiling 配置，但这份配置没有传到私有的 gen_vae，所以没有报错，也没有生效。切换下面的版本看配置走到哪里。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="版本">
+          <button type="button" data-flow="before" aria-pressed="true">修复前</button>
+          <button type="button" data-flow="after" aria-pressed="false">修复后</button>
+        </div>
+        <div class="flow">
+          <span class="node hit" id="n-cfg">enable_vae_tiling</span><span class="arrow">→</span>
+          <span class="node hit" id="n-stage">DIFFUSION stage</span><span class="arrow">→</span>
+          <span class="node" id="n-std">通用 VAE 配置入口</span><span class="arrow">/</span>
+          <span class="node" id="n-gen">gen_vae（执行 decode）</span>
+        </div>
+        <p class="verdict" id="verdict"></p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">02 · tiling 为什么省显存</p>
+      <h2>整张潜变量一次解码，<br>换成分块逐个解码。</h2>
+      <p>不分块时，整张图的解码中间激活同时驻留显存，峰值随分辨率平方增长。tiling 每次只解码一块，峰值由块大小决定，块之间再做重叠混合消除接缝。下面是示意动画，显存条只表示相对趋势，不是实测曲线。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="解码方式">
+          <button type="button" data-mode="full" aria-pressed="true">整图解码</button>
+          <button type="button" data-mode="tile" aria-pressed="false">tiling</button>
+        </div>
+        <div class="tile-wrap">
+          <div class="grid" id="grid" aria-hidden="true"></div>
+          <div>
+            <div class="meter" id="meter"><div></div></div>
+            <p class="caption" id="meterCap">中间激活驻留（示意）</p>
+            <button type="button" class="btn-sm" id="play">播放解码</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">03 · 实测结果</p>
+      <h2>两种模式分别对比各自的基线。</h2>
+      <p>以下数字来自 PR 中的基准测试。tiling 与 slicing 的测试配置不同，所以各自和自己的基线比较，不放在同一把尺子上。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="模式">
+          <button type="button" data-res="tiling" aria-pressed="true">tiling · 3072²</button>
+          <button type="button" data-res="slicing" aria-pressed="false">slicing</button>
+        </div>
+        <div class="bars">
+          <div class="bar"><span>基线</span><div class="t"><div class="f" id="b0"></div></div><b id="v0"></b></div>
+          <div class="bar"><span id="l1">tiling</span><div class="t"><div class="f on" id="b1"></div></div><b id="v1"></b></div>
+        </div>
+        <p class="delta" id="delta"></p>
+        <p class="caption">解码阶段峰值显存 · 修复后输出由回归测试覆盖</p>
+      </div>
+    </section>
+
+    <section class="contact">
+      <a class="back" href="vllm-omni.html">← 返回 vLLM-Omni 档案</a>
+      <a class="back" href="https://github.com/vllm-project/vllm-omni/pull/7774" target="_blank" rel="noreferrer">打开 PR #7774 ↗</a>
+    </section>
+  </main>
+
+  <footer>© 2026 余奕辰</footer>
+
+  <script>
+    function bindSeg(attr, fn) {
+      const btns = document.querySelectorAll(`[data-${attr}]`);
+      btns.forEach(b => b.addEventListener('click', () => {
+        btns.forEach(x => x.setAttribute('aria-pressed', x === b));
+        fn(b.dataset[attr]);
+      }));
+    }
+
+    // 01 config flow
+    const std = document.getElementById('n-std'), gen = document.getElementById('n-gen'), verdict = document.getElementById('verdict');
+    function setFlow(v) {
+      const fixed = v === 'after';
+      std.className = 'node ' + (fixed ? 'dim' : 'miss');
+      gen.className = 'node ' + (fixed ? 'hit' : 'dim');
+      verdict.textContent = fixed
+        ? '标准配置映射到 gen_vae，解码真正走 tiling 路径。'
+        : '配置停在通用入口，gen_vae 仍整图解码，开关被静默忽略。';
+    }
+    bindSeg('flow', setFlow);
+    setFlow('before');
+
+    // 02 tiling animation
+    const N = 6, grid = document.getElementById('grid'), meter = document.getElementById('meter'), fill = meter.firstElementChild;
+    grid.style.gridTemplateColumns = `repeat(${N}, 1fr)`;
+    const cells = Array.from({ length: N * N }, () => grid.appendChild(document.createElement('i')));
+    let mode = 'full', timer = null;
+    function reset() {
+      clearInterval(timer);
+      cells.forEach(c => c.className = '');
+      fill.style.width = '0';
+      meter.classList.remove('full');
+    }
+    bindSeg('mode', m => { mode = m; reset(); });
+    document.getElementById('play').addEventListener('click', () => {
+      reset();
+      if (mode === 'full') {
+        let k = 0;
+        timer = setInterval(() => {
+          k++;
+          fill.style.width = Math.min(100, k * 10) + '%';
+          if (k >= 10) {
+            cells.forEach(c => c.className = 'active');
+            meter.classList.add('full');
+            clearInterval(timer);
+            setTimeout(() => cells.forEach(c => c.className = 'done'), 500);
+          }
+        }, 70);
+      } else {
+        let k = 0;
+        timer = setInterval(() => {
+          if (k > 0) cells[k - 1].className = 'done';
+          if (k === cells.length) { fill.style.width = '0'; clearInterval(timer); return; }
+          cells[k].className = 'active';
+          fill.style.width = '14%';
+          k++;
+        }, 90);
+      }
+    });
+
+    // 03 results (GB, from PR benchmarks)
+    const data = {
+      tiling:  { label: 'tiling',  base: 22.1, opt: 2.7 },
+      slicing: { label: 'slicing', base: 16.6, opt: 10.1 }
+    };
+    function setRes(k) {
+      const d = data[k], max = 22.1;
+      document.getElementById('l1').textContent = d.label;
+      document.getElementById('b0').style.width = d.base / max * 100 + '%';
+      document.getElementById('b1').style.width = d.opt / max * 100 + '%';
+      document.getElementById('v0').textContent = d.base + ' GB';
+      document.getElementById('v1').textContent = d.opt + ' GB';
+      document.getElementById('delta').textContent = `−${Math.round((1 - d.opt / d.base) * 100)}%`;
+    }
+    bindSeg('res', setRes);
+    setRes('tiling');
+  </script>
+</body>
+</html>
