@@ -1,10 +1,431 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Qwen-Image-2.1 | 余奕辰</title><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet"><style>:root{--ink:#17212b;--paper:#f7f5ef;--muted:#66717d;--line:#d9d5cb;--blue:#2463b5;--orange:#c75024;--mono:"IBM Plex Mono",monospace;--sans:"Noto Sans SC",sans-serif}*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:#111820;color:var(--ink);font-family:var(--sans)}#viewport{position:fixed;inset:0}#stage{position:absolute;width:1920px;height:1080px;transform-origin:0 0}section{position:absolute;inset:0;padding:105px 132px 120px;background:var(--paper);opacity:0;visibility:hidden;transition:opacity .22s;display:flex;flex-direction:column;gap:28px}section.on{opacity:1;visibility:visible}.cover{background:#17212b;color:#f7f5ef;justify-content:center;padding-left:160px}.cover:before{content:"";position:absolute;left:0;top:0;width:24px;height:100%;background:linear-gradient(var(--orange) 0 50%,var(--blue) 50%)}.tag{font:22px var(--mono);letter-spacing:1px;color:var(--orange);margin:0}.cover .tag{color:#efaa83}h1{font-size:88px;line-height:1.15;letter-spacing:-4px;margin:0;max-width:1500px}h2{font-size:54px;line-height:1.18;letter-spacing:-2px;margin:0;max-width:1520px}h3{font-size:29px;margin:0}p{font-size:24px;line-height:1.6;margin:0}.lead{max-width:1220px;font-size:30px;color:#3e4b58}.cover .lead{color:#c7ced5}.meta,.next{font:20px var(--mono);color:#8c98a4}.two,.grid3{display:grid;grid-template-columns:1fr 1fr;gap:50px;align-items:start}.grid3{grid-template-columns:repeat(3,1fr);gap:24px}.card{background:#fff;border:1px solid var(--line);border-top:7px solid var(--blue);border-radius:8px;padding:23px 26px;min-height:210px}.card.orange{border-top-color:var(--orange)}.card .n{font:17px var(--mono);color:var(--blue);display:block;margin-bottom:17px}.card p{font-size:21px;line-height:1.48}.flow{display:flex;align-items:center;gap:13px;margin:14px 0}.node{background:white;border:1px solid var(--line);padding:20px;min-width:215px;border-radius:7px;text-align:center;font-size:23px;font-weight:600}.node.bad{border-color:#d58263;background:#fbece6}.node.good{border-color:#7da5d0;background:#eaf2fd}.arrow{font-size:34px;color:#8995a0}.code{background:#19232e;color:#e6edf3;border-radius:8px;padding:23px 28px;font:20px/1.65 var(--mono);white-space:pre-wrap}.note{border-left:8px solid var(--orange);padding:14px 23px;background:#f9ece5;font-size:24px;line-height:1.52}.evidence{display:grid;grid-template-columns:355px 1fr;gap:35px;align-items:center}.metric{background:#e8eef7;padding:25px;border-radius:8px}.metric b{display:block;font:60px var(--mono);letter-spacing:-5px;color:var(--blue);line-height:1}.metric span{font-size:20px}.bars{display:flex;flex-direction:column;gap:15px}.barrow{display:grid;grid-template-columns:250px 1fr 130px;gap:15px;align-items:center;font:19px var(--mono)}.track{height:23px;background:#e1e5e7}.fill{height:100%;background:var(--blue)}.fill.orange{background:var(--orange)}.table{width:100%;border-collapse:collapse;font-size:20px}.table th,.table td{text-align:left;padding:13px;border-bottom:1px solid var(--line)}.table th{font:16px var(--mono);color:var(--muted)}.table td b{font-family:var(--mono);color:var(--blue)}#hud{position:fixed;right:22px;bottom:18px;background:#17212bdd;color:#dce3e9;padding:7px 12px;border-radius:5px;font:14px var(--mono)}#bar{position:fixed;left:0;bottom:0;height:4px;background:var(--orange);transition:width .2s}.help{position:fixed;left:22px;bottom:17px;color:#b9c2cb;font:13px var(--mono)}a{color:var(--blue)}@media(max-width:800px){#stage{transform:scale(.39)!important;transform-origin:0 0}.help{display:none}}</style></head><body><div id="viewport"><main id="stage">
-<section class="on"><p class="tag">01 · OBJECTIVE · QWEN-IMAGE-2.1 INFERENCE</p><h2>这个 PR 的出发点不是“修一个 key”，<br>而是在并发下提高成功 images/s。</h2><p class="lead">Qwen-Image-2.1 推理优化的总体目标是低延迟、高吞吐与更高的显存利用率。这里承担的是 high-throughput 路线：在并发到达下最大化成功生成的 images/s，同时报告 p50 / p95 / p99 延迟与失败情况。</p><div class="grid3"><div class="card"><span class="n">OPTIMIZATION TARGET</span><h3>高吞吐，不牺牲可观测性</h3><p>吞吐只计算成功图片；延迟分位数与失败数是共同报告的约束，而不是被平均值掩盖的副作用。</p></div><div class="card"><span class="n">PROFILE FIRST</span><h3>从编辑请求的真实形状出发</h3><p>剖析 prompt 长度、reference-image 数量与尺寸不同的 editing batch，找出 padding、packing 与 sub-batch 的额外开销。</p></div><div class="card orange"><span class="n">CORRECTNESS GUARDRAILS</span><h3>不改变请求语义</h3><p>保留请求顺序与 conditioning isolation；优化组批不应让请求的结果依赖“和谁一起算”。</p></div></div><div class="two"><div><h3 style="margin-bottom:14px">这次 profile 发现的高杠杆点</h3><div class="flow"><div class="node">same reference<br>layout</div><div class="arrow">+</div><div class="node">different prompt<br>token length</div><div class="arrow">→</div><div class="node bad">padding<br>graph fallback</div></div></div><div><p class="note">L0（0-ref）与 L1（1-ref）混合长度 workload 的 main 日志出现 padded-text-mask eager fallback；这意味着本可 graph-eligible 的 decode 路径没有被捕获。#9040 因此聚焦一个边界清晰的动作：按 token 长度分组，减少无效 padding，同时保持同长度请求仍可合批。</p></div></div><p class="meta">工作定义：maximize successful images/s under concurrency · 同时记录 p50 / p95 / p99 latency 与 failures</p></section>
-<section><p class="tag">02 · SOLUTION</p><h2>让 compatibility key<br>包含真正决定图形捕获的形状信息。</h2><div class="two"><div class="code">before
-  reference image layout
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>混合长度组批 · 余奕辰</title>
+  <meta name="description" content="vLLM-Omni PR #9040 与 #10376：Qwen-Image-2.1 混合长度批次先丢了 CUDA Graph 吞吐，又暴露出输出漂移。从按长度组批，到定位图像 RoPE 位置随 padding 偏移并逐请求修复。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/home.css">
+  <link rel="stylesheet" href="../assets/case.css">
+  <style>
+    /* route map */
+    .route { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 10px; align-items: stretch; margin-top: 28px; }
+    .route a { display: block; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); text-decoration: none; color: var(--ink); }
+    .route a:hover { border-color: var(--accent); }
+    .route b { display: block; font-size: 15px; margin: 4px 0 2px; }
+    .route span { font-size: 13px; color: var(--muted); }
+    .route i { align-self: center; font-style: normal; color: var(--muted); font-family: var(--mono); }
+    .part { margin: 0; padding: 40px 0 0; font: 500 13px var(--mono); color: var(--accent); letter-spacing: .04em; }
+    .step .kicker { display: block; font-size: clamp(18px, 2.4vw, 22px); line-height: 1.3; color: var(--accent); margin-bottom: 10px; }
 
-after
-  layout + prompt token count
-  + negative prompt count (CFG)</div><div><p class="lead">同长度请求继续共享 graph batch；不同长度请求分开。eager、graph-disabled 与缺 tokenizer 的场景保留原有的长度无关组批，避免为了 CUDA Graph 改变所有执行模式。</p><p class="note" style="margin-top:28px">实现范围被限制在 pipeline compatibility 与测试：共享 prompt 构造逻辑，确保 sizing 模板和实际编码模板一致。</p></div></div><div class="grid3"><div class="card"><span class="n">01</span><h3>窄改动</h3><p>只修改 batch key，不重写 scheduler。</p></div><div class="card"><span class="n">02</span><h3>兼容 CFG</h3><p>True CFG 同时纳入 negative prompt 长度。</p></div><div class="card orange"><span class="n">03</span><h3>明确回退</h3><p>非 graph 路径维持旧策略。</p></div></div></section>
-<section><p class="tag">03 · RESULTS & BOUNDARY</p><h2>混合长度场景的成功 images/s 上升，<br>而同长度对照保持稳定。</h2><div class="evidence"><div class="metric"><b>+6.4%</b><span>L0 · mixed-length / 0-ref<br>平均 successful images/s</span></div><div class="bars"><div class="barrow"><span>H1 · equal / 1-ref</span><div class="track"><div class="fill orange" style="width:76%"></div></div><b>−1.2%</b></div><div class="barrow"><span>L0 · mixed / 0-ref</span><div class="track"><div class="fill" style="width:96%"></div></div><b>+6.4%</b></div><div class="barrow"><span>L1 · mixed / 1-ref</span><div class="track"><div class="fill" style="width:88%"></div></div><b>+5.1%</b></div></div></div><table class="table"><thead><tr><th>shared workload · 2 passes</th><th>main images/s</th><th>PR images/s</th><th>wall time: main → PR</th></tr></thead><tbody><tr><td><b>H1</b> · equal-length, 1-ref</td><td>0.0814 / 0.0811</td><td>0.0804 / 0.0802</td><td>24.58 / 24.65s → 24.87 / 24.92s</td></tr><tr><td><b>L0</b> · mixed-length, 0-ref</td><td>0.0870 / 0.0868</td><td>0.0921 / 0.0928</td><td>23.00 / 23.04s → 21.71 / 21.54s</td></tr><tr><td><b>L1</b> · mixed-length, 1-ref</td><td>0.0757 / 0.0754</td><td>0.0794 / 0.0794</td><td>26.41 / 26.51s → 25.18 / 25.20s</td></tr></tbody></table><p class="note">验证：main 与 PR 各 12 / 12 请求成功，无缺图或尺寸不符；54 个 targeted compatibility tests 通过。H1 的 4 / 4 输出像素一致；L0 的 PR 图像与独立串行参考 SHA-256 一致。结论仅覆盖该 1× RTX PRO 6000、1024²、两请求 cell 的局部对照；未覆盖 4-ref、多 GPU 或 2048²。</p><p class="next"><a href="https://github.com/vllm-project/vllm-omni/pull/9040" target="_blank">打开 PR #9040 ↗</a>　·　<a href="vllm-omni.html">返回 vLLM-Omni 档案 ↗</a></p></section>
-</main></div><div class="help">← / → 或点击空白处翻页</div><div id="hud"></div><div id="bar"></div><script>const stage=document.querySelector('#stage'),slides=[...stage.children],bar=document.querySelector('#bar'),hud=document.querySelector('#hud');let i=0;function fit(){stage.style.transform=`scale(${Math.min(innerWidth/1920,innerHeight/1080)})`}function go(n){i=Math.max(0,Math.min(slides.length-1,n));slides.forEach((x,k)=>x.classList.toggle('on',k===i));location.hash=i;hud.textContent=`${String(i+1).padStart(2,'0')} / ${String(slides.length).padStart(2,'0')}`;bar.style.width=`${i/(slides.length-1)*100}%`}addEventListener('resize',fit);addEventListener('hashchange',()=>go(+location.hash.slice(1)||0));document.addEventListener('keydown',e=>{if(['ArrowRight','ArrowDown',' '].includes(e.key)){go(i+1);e.preventDefault()}if(['ArrowLeft','ArrowUp'].includes(e.key)){go(i-1);e.preventDefault()}});document.querySelector('#viewport').addEventListener('click',e=>{if(!e.target.closest('a'))go(i+1)});fit();go(+location.hash.slice(1)||0);</script></body></html>
+    /* #9040 token bars */
+    .tok { display: grid; grid-template-columns: 70px 1fr 64px; gap: 12px; align-items: center; font: 13px var(--mono); margin-bottom: 10px; }
+    .tok .t { height: 22px; background: var(--bg); border-radius: 4px; overflow: hidden; display: flex; }
+    .tok .real { background: var(--accent); transition: width .2s; }
+    .tok .pad { background: repeating-linear-gradient(135deg, var(--warn-bg) 0 6px, #f3dcb3 6px 12px); transition: width .2s; }
+    .slider { display: flex; align-items: center; gap: 12px; font: 13px var(--mono); color: var(--muted); margin-bottom: 18px; }
+    .slider input { flex: 1; max-width: 360px; accent-color: var(--accent); }
+    .groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+    .group { border: 1px solid var(--line); border-radius: 6px; padding: 12px; background: var(--bg); }
+    .group header { display: flex; justify-content: space-between; align-items: center; gap: 8px; font: 12px var(--mono); color: var(--muted); margin-bottom: 10px; }
+    .group .tok { grid-template-columns: 22px 1fr; gap: 8px; margin-bottom: 6px; }
+    .group .tok .t { height: 14px; }
+
+    /* #10376 */
+    .imgs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .imgs figure { margin: 0; }
+    .imgs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); display: block; background: var(--bg); }
+    .imgs figcaption { font: 12px var(--mono); color: var(--muted); margin-top: 6px; }
+    .imgs figcaption b { color: var(--ink); }
+    .imgs figcaption b.bad { color: var(--warn); }
+    .seq .row { display: grid; grid-template-columns: 70px 1fr; gap: 12px; align-items: center; font: 12px var(--mono); }
+    .seq .cells { display: flex; height: 26px; border-radius: 4px; overflow: hidden; border: 1px solid var(--line); background: var(--bg); }
+    .seq .cells span { height: 100%; transition: width .3s; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; white-space: nowrap; overflow: hidden; }
+    .seq .pad { background: repeating-linear-gradient(135deg, var(--warn-bg) 0 6px, #f3dcb3 6px 12px); color: var(--warn) !important; }
+    .seq .txt { background: var(--accent); }
+    .seq .img { background: var(--ok); }
+    .pos { font: 500 28px var(--mono); margin: 16px 0 0; }
+    .pos.bad { color: var(--warn); }
+    .pos.good { color: var(--ok); }
+    .loc .bar { grid-template-columns: 220px 1fr 80px; }
+    .bridge { margin-top: 24px; padding: 18px 20px; border: 1px dashed var(--warn); border-radius: 8px; background: var(--warn-bg); font-size: 15px; }
+    .bridge b { display: block; margin-bottom: 4px; color: var(--warn); }
+
+    @media (max-width: 760px) {
+      .route { grid-template-columns: 1fr; }
+      .route i { display: none; }
+      .tok { grid-template-columns: 56px 1fr 52px; }
+      .bar { grid-template-columns: 56px 1fr 76px; }
+      .imgs { gap: 6px; }
+      .loc .bar { grid-template-columns: 1fr; gap: 4px; }
+      .loc .bar b { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="../index.html">余奕辰</a>
+    <nav>
+      <a href="../index.html">经历</a>
+      <a href="https://github.com/vllm-project/vllm-omni/pull/9040" target="_blank" rel="noreferrer">#9040 ↗</a>
+      <a href="https://github.com/vllm-project/vllm-omni/pull/10376" target="_blank" rel="noreferrer">#10376 ↗</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="kicker">VLLM-OMNI · QWEN-IMAGE-2.1 · PR #9040 + #10376 · 均为 OPEN</p>
+      <h1>Qwen-Image-2.1 混合长度组批的<br>吞吐优化与输出一致性修复。</h1>
+      <p class="lede">Qwen-Image-2.1 把布局相同的请求合批，prompt 长短不一时短请求需补 padding。#9040 消除 padding 导致 decode 丢失 CUDA Graph 的吞吐损失；#10376 定位并修复混合长度批次的输出漂移——图像 RoPE 位置随 padding 偏移。</p>
+      <p class="meta">1× RTX PRO 6000 · 1024² · 混合长度 images/s +6.4% / +5.1% · 输出漂移 PSNR 27.66 → 45.16 dB</p>
+      <div class="route">
+        <a href="#pr9040"><span class="mono">PR #9040 · 吞吐</span><b>padding 触发 CUDA Graph 回退</b><span>按 prompt 长度组批</span></a>
+        <i>→</i>
+        <a href="#drift"><span class="mono">对照输出</span><b>混合长度批次输出漂移</b><span>与 graph 回退无关</span></a>
+        <i>→</i>
+        <a href="#pr10376"><span class="mono">PR #10376 · 正确性</span><b>图像 RoPE 位置随 padding 偏移</b><span>逐请求计算帧位置</span></a>
+      </div>
+    </section>
+
+    <p class="part" id="pr9040">PART 1 · PR #9040 · 先追吞吐</p>
+
+    <section class="step" style="padding-top:20px">
+      <p class="kicker">01 · padding 从哪里来</p>
+      <h2>合批要求文本张量等长，短 prompt 左侧补 padding。</h2>
+      <p>目标是在并发下提高成功生成的 images/s。同一批请求的文本张量要对齐形状。长度一致时，decode 可以走预先捕获的 CUDA Graph；只要出现 padding，main 的日志就记录一次 padded-text-mask eager 回退。拖动滑块改变请求 B 的长度。</p>
+      <div class="panel">
+        <div class="slider">
+          <span>B 的 token 数</span>
+          <input type="range" id="lenB" min="8" max="64" step="4" value="56" aria-label="请求 B 的 prompt token 数">
+          <b id="lenBv"></b>
+        </div>
+        <div class="tok"><span>请求 A</span><div class="t"><div class="real" id="aReal"></div><div class="pad" id="aPad"></div></div><b id="aLab"></b></div>
+        <div class="tok"><span>请求 B</span><div class="t"><div class="real" id="bReal"></div><div class="pad" id="bPad"></div></div><b id="bLab"></b></div>
+        <p class="verdict" id="padVerdict"></p>
+        <p class="caption">蓝色是真实 token，斜纹是 padding。token 数为示意。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">02 · 改的是组批的 key</p>
+      <h2>prompt 长度纳入合批兼容性 key，等长请求仍然合批。</h2>
+      <p>没有重写调度器，只改了判断“哪些请求能放进同一批”的 key。开启 true CFG 时，negative prompt 的长度也要一致。graph 关闭或拿不到 tokenizer 时，退回原来不看长度的组批，因为这些情况下本来就不走 graph。切换选项，看 6 个请求怎么分组。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="版本">
+          <button type="button" data-ver="main" aria-pressed="true">main</button>
+          <button type="button" data-ver="pr" aria-pressed="false">#9040</button>
+          <button type="button" data-ver="eager" aria-pressed="false">#9040 · graph 关闭</button>
+        </div>
+        <div class="seg" role="group" aria-label="true CFG">
+          <button type="button" data-cfg="off" aria-pressed="true">CFG 关</button>
+          <button type="button" data-cfg="on" aria-pressed="false">CFG 开</button>
+        </div>
+        <div class="code" id="key"></div>
+        <div class="groups" id="groups"></div>
+        <p class="caption">请求与长度为示意；分组规则与 PR 描述一致。请求顺序由原有调度器保持。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">03 · 实测吞吐</p>
+      <h2>混合长度组吞吐提升，等长对照组持平。</h2>
+      <p>每组 2 个请求，main 与 PR 各跑 1 次预热和 2 次正式测量，吞吐 = 完成图片数 / 墙钟时间。12 / 12 个请求全部完成，54 个针对性兼容测试通过。只有两次测量，只支持局部结论。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="测试组">
+          <button type="button" data-cell="L0" aria-pressed="true">L0 · 混合 / 0 参考图</button>
+          <button type="button" data-cell="L1" aria-pressed="false">L1 · 混合 / 1 参考图</button>
+          <button type="button" data-cell="H1" aria-pressed="false">H1 · 等长 / 1 参考图</button>
+        </div>
+        <div class="bars">
+          <div class="bar"><span>main</span><div class="t"><div class="f" id="rb0"></div></div><b id="rv0"></b></div>
+          <div class="bar"><span>#9040</span><div class="t"><div class="f on" id="rb1"></div></div><b id="rv1"></b></div>
+        </div>
+        <p class="delta" id="rDelta"></p>
+        <p class="verdict" id="rNote"></p>
+        <p class="caption" id="rWall"></p>
+      </div>
+    </section>
+
+    <section class="step" id="drift">
+      <p class="kicker">04 · 对照输出时发现的问题</p>
+      <h2>分组后输出与 main 不一致，漂移源自 main 的混合长度批次。</h2>
+      <p>按理说组批方式不该改变每个请求的结果。但等长组 H1 逐像素一致，混合长度组的输出却和 main 有明显差异。#9040 的 L0 输出与单独串行生成的参考图 SHA-256 一致，说明 #9040 给的是“对的”结果，偏掉的是 main 上的混合长度批次：同一个请求的输出，会随同批的其他请求变化。</p>
+      <div class="panel">
+        <div class="scroll">
+          <table>
+            <thead><tr><th>组 / 请求</th><th>PSNR (dB) vs main</th><th>SSIM</th><th>观察</th></tr></thead>
+            <tbody>
+              <tr><td>H1 · 两个请求</td><td class="num">相同</td><td class="num">1.00000</td><td>4 / 4 对输出逐像素一致</td></tr>
+              <tr><td>L0 · 短 prompt</td><td class="num">28.77</td><td class="num">0.97213</td><td>#9040 输出与串行参考 SHA-256 一致</td></tr>
+              <tr><td>L0 · 长 prompt</td><td class="num">36.85</td><td class="num">0.99184</td><td>#9040 输出与串行参考 SHA-256 一致</td></tr>
+              <tr><td>L1 · 短 prompt</td><td class="num">46.61</td><td class="num">0.99646</td><td>同批上下文差异较小</td></tr>
+              <tr><td>L1 · 长 prompt</td><td class="num">56.87</td><td class="num">0.99883</td><td>同批上下文差异较小</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="bridge">
+          <b>#9040 只是绕开了它</b>
+          #9040 只对能走 CUDA Graph 的批次按长度分组。eager 执行时，长短 prompt 仍会进同一批，漂移照样发生（issue #10374）。分组能避开问题，但混合长度批次本身为什么会错，还没有答案。
+        </div>
+      </div>
+    </section>
+
+    <p class="part" id="pr10376">PART 2 · PR #10376 · 再追正确性</p>
+
+    <section class="step" style="padding-top:20px">
+      <p class="kicker">05 · 把现象固定下来</p>
+      <h2>等长批次输出接近，混合长度批次明显漂移。</h2>
+      <p>在 eager 服务下固定请求 R 的 prompt、seed 和参数，分别单独运行、放进 3 个等长 prompt 的批次 (wave B)、放进带两个更长 prompt 的批次 (wave C)。调度日志确认两个 wave 都是真实的 3 请求批次。PSNR 都是和单独运行比。</p>
+      <div class="panel">
+        <div class="imgs">
+          <figure><img src="../assets/pr10376/03_R_single_request_50steps.jpg" alt="请求 R 单独运行的输出" loading="lazy"><figcaption>单独运行<br><b>参照</b></figcaption></figure>
+          <figure><img src="../assets/pr10376/01_R_same_length_batch_50steps.jpg" alt="请求 R 在等长批次中的输出" loading="lazy"><figcaption>wave B · 等长批<br><b>43.99 dB</b></figcaption></figure>
+          <figure><img src="../assets/pr10376/02_R_mixed_length_batch_50steps.jpg" alt="请求 R 在混合长度批次中的输出" loading="lazy"><figcaption>wave C · 混合长度批<br><b class="bad">27.94 dB</b></figcaption></figure>
+        </div>
+        <p class="caption">图片来自 PR 描述，50 步。等长批与单独运行的 43.99 dB 是批处理本身带来的正常数值差。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">06 · 根因</p>
+      <h2>图像 RoPE 帧位置，随整批 padding 后的文本长度偏移。</h2>
+      <p>RoPE 给每个 token 编码位置。<code>QwenImage21Rope.forward</code> 为整批只建一张表：文本 token 推进一个共享的位置计数，图像块的帧轴位置从它接着算。文本按整批最长的 prompt 左侧补齐——和第一部分里拖垮 CUDA Graph 的是同一份 padding——R 的 17 个文本 token 前面多了 47 个 padding，图像的帧位置从 17 被推到 64。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="批次">
+          <button type="button" data-w="B" aria-pressed="true">wave B · 等长批</button>
+          <button type="button" data-w="C" aria-pressed="false">wave C · 混合长度批</button>
+          <button type="button" data-w="fix" aria-pressed="false">wave C · #10376</button>
+        </div>
+        <div class="seq" id="seq"></div>
+        <p class="pos" id="pos"></p>
+        <p class="verdict" id="posNote"></p>
+        <p class="caption">斜纹是 padding，蓝色是 R 的文本，绿色是 R 的图像 token。长度按比例示意。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">07 · 怎么确认是它</p>
+      <h2>逐项消除批次间差异，定位触发漂移的那一项。</h2>
+      <p>批次之间不只 RoPE 不同：文本编码器的输出、DiT 注意力掩码的路径也会变。在 8 步去噪下依次消掉这些差异，每一步都测 R 在 wave B 与 wave C 之间的 PSNR。</p>
+      <div class="panel loc">
+        <div class="bars" id="locBars"></div>
+        <p class="verdict">让文本编码器输出完全一致、让两批走同一条注意力掩码路径，都没有变化；把 R 的图像帧位置放回 17，漂移基本消失，第一层 DiT 注意力输出的平均绝对差从 0.375 降到 0.0017。</p>
+        <p class="caption">条形只表示定性结论，逐步 PSNR 见 PR 原图。“硬编码位置”只对这一批里的 R 正确，会让更长的请求拿到错误位置，所以它是诊断，不是修复。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">08 · 修复</p>
+      <h2>按各请求自身 padding 回退帧位置，RoPE 表改为逐请求计算。</h2>
+      <p>文本有 padding 时，<code>QwenImage21SequencePrepare</code> 把逐请求的文本有效掩码传给 <code>QwenImage21Rope</code>。每一行的帧索引减去这一行自己的 padding 数，于是每个请求拿到的位置和它单独运行时一样。高、宽方向的频率不变，仍然共享。</p>
+      <div class="panel">
+        <div class="code">before  freqs: [S, D/2]      <s># 整批一张表</s>
+after   freqs: [B, S, D/2]   <em># 逐请求，帧位置 −= 本行 padding 数</em>
+
+rotary helpers 同时接受 [S, D/2] 与 [B, S, D/2]
+prefix / target 的切分与拼接改用序列维 (−2)</div>
+        <div class="flow">
+          <span class="node hit">CUDA</span><span class="arrow">+</span>
+          <span class="node hit">未开序列并行</span><span class="arrow">+</span>
+          <span class="node hit">批大小 &gt; 1</span><span class="arrow">+</span>
+          <span class="node hit">文本有 padding</span><span class="arrow">→</span>
+          <span class="node">逐请求 RoPE</span>
+        </div>
+        <p class="verdict">只有同时满足这四个条件才走新路径；等长批、单请求、序列并行和非 CUDA 设备仍用原来的二维表。和 #9040 的分工是：#9040 让能走 graph 的批次不混长度、换回吞吐；#10376 让仍然混在一起的批次算对，不减少合批，也不依赖 #9040。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">09 · 结果</p>
+      <h2>漂移回到正常批处理水平，每步耗时不变。</h2>
+      <p>50 步时，R 在等长批与混合长度批之间的 PSNR 从 27.66 dB 升到 45.16 dB，SSIM 0.964 → 0.997，略高于单独运行和等长批之间本来就有的 43.99 dB。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="版本">
+          <button type="button" data-v="main" aria-pressed="true">main</button>
+          <button type="button" data-v="pr" aria-pressed="false">#10376</button>
+        </div>
+        <div class="imgs" style="grid-template-columns:repeat(2,1fr);max-width:560px">
+          <figure><img id="imB" src="../assets/pr10376/01_R_same_length_batch_50steps.jpg" alt="等长批输出" loading="lazy"><figcaption>wave B · 等长批</figcaption></figure>
+          <figure><img id="imC" src="../assets/pr10376/02_R_mixed_length_batch_50steps.jpg" alt="混合长度批输出" loading="lazy"><figcaption>wave C · 混合长度批</figcaption></figure>
+        </div>
+        <p class="delta" id="vRes"></p>
+      </div>
+      <p style="margin-top:28px">再换批大小。20 步，每个点 4 个 wave（main 和 #10376 在两张卡上并行，再交换卡重跑），52 个请求全部成功。漂移是 R 相对同次运行中等长批 R 的 PSNR。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="指标">
+          <button type="button" data-m="psnr" aria-pressed="true">漂移 PSNR</button>
+          <button type="button" data-m="step" aria-pressed="false">每步耗时</button>
+        </div>
+        <div class="scroll">
+          <table><thead><tr><th>批次</th><th>main</th><th>#10376</th></tr></thead><tbody id="bsBody"></tbody></table>
+        </div>
+        <p class="verdict" id="bsNote"></p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">10 · 验证与边界</p>
+      <h2>两个 PR 的测试覆盖，与尚未验证的边界。</h2>
+      <div class="panel">
+        <ul class="limits" style="margin:0;color:var(--ink)">
+          <li><b>#9040</b>：54 个针对性兼容测试通过，覆盖正负 prompt 长度、省略与空 negative prompt、等长合批、混合长度分开、两种调度器和 graph 关闭回退。</li>
+          <li><b>#10376</b>：新增 3 个单元测试，左侧 padding 批次每一行的频率与该请求单独计算一致，批量与逐请求旋转结果一致；<code>qwen_image_21</code> 测试目录 246 通过、10 跳过（main 243 通过）。等长批下与 main 输出逐位相同。</li>
+        </ul>
+        <ul class="limits">
+          <li>#9040 只有两次测量，只支持局部吞吐结论；合入新 main 后 GPU 推理和针对性测试尚未重跑；未覆盖 4 张参考图、多 GPU、2048²。</li>
+          <li>#10376 输出明显更接近，但不是逐位批不变；速度在 SM120 上测量，SM103 + PyTorch 2.13 上混合长度批会失去融合 RoPE kernel，未测；未测图像编辑、true CFG、CUDA Graph 服务、序列并行、非 CUDA 设备。</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="contact">
+      <a class="back" href="../index.html">← 返回经历</a>
+      <a class="back" href="vae-tiling.html">#7774 显存排查 →</a>
+      <a class="back" href="https://github.com/vllm-project/vllm-omni/pull/9040" target="_blank" rel="noreferrer">打开 PR #9040 ↗</a>
+      <a class="back" href="https://github.com/vllm-project/vllm-omni/pull/10376" target="_blank" rel="noreferrer">打开 PR #10376 ↗</a>
+    </section>
+  </main>
+
+  <footer>© 2026 余奕辰</footer>
+
+  <script src="../assets/case.js"></script>
+  <script>
+    // 01 padding slider
+    const LEN_A = 24, MAX = 64;
+    function setPad() {
+      const b = +$('lenB').value, m = Math.max(LEN_A, b);
+      $('lenBv').textContent = b;
+      [['a', LEN_A], ['b', b]].forEach(([k, n]) => {
+        $(k + 'Real').style.width = n / MAX * 100 + '%';
+        $(k + 'Pad').style.width = (m - n) / MAX * 100 + '%';
+        $(k + 'Lab').textContent = m > n ? `+${m - n} pad` : `${n} tok`;
+      });
+      $('padVerdict').innerHTML = b === LEN_A
+        ? '<span class="pill ok">GRAPH</span> 长度一致，无 padding，decode 走已捕获的 CUDA Graph。'
+        : '<span class="pill warn">EAGER</span> 出现 padding，main 上 decode 回退到 eager 执行。';
+    }
+    $('lenB').addEventListener('input', setPad);
+    setPad();
+
+    // 02 grouping
+    const reqs = [
+      { id: 'A', ref: 0, pos: 24, neg: 12 }, { id: 'B', ref: 0, pos: 56, neg: 12 }, { id: 'C', ref: 0, pos: 24, neg: 32 },
+      { id: 'D', ref: 1, pos: 40, neg: 12 }, { id: 'E', ref: 1, pos: 40, neg: 12 }, { id: 'F', ref: 1, pos: 64, neg: 12 }
+    ];
+    let ver = 'main', cfg = false;
+    const KEYS = {
+      main:  'key = (参考图布局, 是否有 negative prompt)',
+      pr:    'key = (参考图布局, 是否有 negative prompt,\n       <em>positive 长度</em>{NEG})',
+      eager: 'graph 关闭 → 不看长度，沿用 main 的 key\nkey = (参考图布局, 是否有 negative prompt)'
+    };
+    function render() {
+      const byLen = ver === 'pr';
+      $('key').innerHTML = KEYS[ver].replace('{NEG}', cfg ? ', <em>negative 长度</em>' : '');
+      const groups = new Map();
+      reqs.forEach(r => {
+        const k = [r.ref, byLen ? r.pos : '', byLen && cfg ? r.neg : ''].join('|');
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(r);
+      });
+      $('groups').innerHTML = [...groups.values()].map(g => {
+        const mp = Math.max(...g.map(r => r.pos)), mn = Math.max(...g.map(r => r.neg));
+        const padded = g.some(r => r.pos !== mp || (cfg && r.neg !== mn));
+        const tag = ver === 'eager'
+          ? '<span class="pill mute">EAGER · 原行为</span>'
+          : padded ? '<span class="pill warn">PAD → EAGER</span>' : '<span class="pill ok">GRAPH</span>';
+        const bar = (n, m) => `<div class="real" style="width:${n / MAX * 100}%"></div><div class="pad" style="width:${(m - n) / MAX * 100}%"></div>`;
+        const rows = g.map(r => `<div class="tok"><span>${r.id}</span><div class="t">${bar(r.pos, mp)}</div></div>` +
+          (cfg ? `<div class="tok"><span></span><div class="t" style="opacity:.6">${bar(r.neg, mn)}</div></div>` : '')).join('');
+        return `<div class="group"><header><span>ref=${g[0].ref}${byLen ? ' · ' + mp + ' tok' : ''}</span>${tag}</header>${rows}</div>`;
+      }).join('');
+    }
+    bindSeg('ver', v => { ver = v; render(); });
+    bindSeg('cfg', v => { cfg = v === 'on'; render(); });
+    render();
+
+    // 03 throughput (images/s, mean of 2 passes)
+    const CELLS = {
+      L0: { main: [0.0870, 0.0868], pr: [0.0921, 0.0928], wm: '23.00 / 23.04', wp: '21.71 / 21.54', d: '+6.4%', note: '混合长度、纯文生图：padding 回退被消除，提升最明显。' },
+      L1: { main: [0.0757, 0.0754], pr: [0.0794, 0.0794], wm: '26.41 / 26.51', wp: '25.18 / 25.20', d: '+5.1%', note: '混合长度、带 1 张参考图：同样受益。' },
+      H1: { main: [0.0814, 0.0811], pr: [0.0804, 0.0802], wm: '24.58 / 24.65', wp: '24.87 / 24.92', d: '−1.2%', note: '等长对照组：本来就不 padding，改动不应带来收益，结果在小幅波动范围内。' }
+    };
+    function setCell(k) {
+      const c = CELLS[k], avg = a => (a[0] + a[1]) / 2, top = 0.095, m = avg(c.main), p = avg(c.pr);
+      $('rb0').style.width = m / top * 100 + '%';
+      $('rb1').style.width = p / top * 100 + '%';
+      $('rv0').textContent = m.toFixed(4);
+      $('rv1').textContent = p.toFixed(4);
+      $('rDelta').textContent = c.d;
+      $('rDelta').className = 'delta' + (c.d.startsWith('−') ? ' neg' : '');
+      $('rNote').textContent = c.note;
+      $('rWall').textContent = `images/s，两次均值 · 墙钟时间 main ${c.wm} s → #9040 ${c.wp} s`;
+    }
+    bindSeg('cell', setCell);
+    setCell('L0');
+
+    // 06 RoPE frame position (R: 17 text tokens; wave C pads 47)
+    const IMG = 40, TOTAL = 64 + IMG;
+    const WV = {
+      B:   { pad: 0,  start: 17, cls: 'good', note: '等长批没有 padding，R 的图像从帧位置 17 开始，和单独运行一样。' },
+      C:   { pad: 47, start: 64, cls: 'bad',  note: '最长的 prompt 有 64 个 token，R 被左侧补 47 个 padding，图像帧位置变成 64，模型看到的位置关系变了。' },
+      fix: { pad: 47, start: 17, cls: 'good', note: 'padding 还在（仍在同一批），但这一行的帧索引减去自己的 47 个 padding，图像回到 17。' }
+    };
+    function setW(k) {
+      const w = WV[k], pct = n => n / TOTAL * 100 + '%', lead = 64 - 17 - w.pad;
+      $('seq').innerHTML = `<div class="row"><span>R 的序列</span><div class="cells">` +
+        (lead > 0 ? `<span style="width:${pct(lead)}"></span>` : '') +
+        (w.pad ? `<span class="pad" style="width:${pct(w.pad)}">pad ×${w.pad}</span>` : '') +
+        `<span class="txt" style="width:${pct(17)}">文本 17</span><span class="img" style="width:${pct(IMG)}">图像</span></div></div>`;
+      $('pos').className = 'pos ' + w.cls;
+      $('pos').textContent = `图像帧位置 = ${w.start}`;
+      $('posNote').textContent = w.note;
+    }
+    bindSeg('w', setW);
+    setW('B');
+
+    // 07 localization (qualitative)
+    $('locBars').innerHTML = [
+      ['原始：wave B vs wave C', 'warn', '漂移大'],
+      ['+ 文本编码器输出一致', 'warn', '无变化'],
+      ['+ 同一注意力掩码路径', 'warn', '无变化'],
+      ['+ R 图像帧位置放回 17', 'on', '基本消失']
+    ].map(([n, c, l], i) => `<div class="bar"><span>${n}</span><div class="t"><div class="f ${c}" style="width:${i < 3 ? 100 : 6}%"></div></div><b>${l}</b></div>`).join('');
+
+    // 09 main vs #10376
+    const V = {
+      main: ['01_R_same_length_batch_50steps.jpg', '02_R_mixed_length_batch_50steps.jpg', '27.66 dB / SSIM 0.964', 'neg'],
+      pr:   ['04_R_same_length_batch_50steps_PR.jpg', '05_R_mixed_length_batch_50steps_PR.jpg', '45.16 dB / SSIM 0.997', '']
+    };
+    function setV(k) {
+      const [b, c, t, cls] = V[k];
+      $('imB').src = '../assets/pr10376/' + b;
+      $('imC').src = '../assets/pr10376/' + c;
+      $('vRes').textContent = 'B vs C：' + t;
+      $('vRes').className = 'delta ' + cls;
+    }
+    bindSeg('v', setV);
+    setV('main');
+
+    // 09 batch sizes (20 steps)
+    const BS = [
+      ['等长 · 3', null, null, 0.689, 0.689],
+      ['混合长度 · 2', 27.46, 44.10, 0.467, 0.467],
+      ['混合长度 · 3', 27.89, 43.65, 0.715, 0.715],
+      ['混合长度 · 4', 27.77, 42.44, 0.949, 0.949]
+    ];
+    function setM(m) {
+      $('bsBody').innerHTML = BS.map(([n, a, b, s1, s2]) => m === 'psnr'
+        ? `<tr><td>${n}</td><td class="num">${a ? a.toFixed(2) + ' dB' : '—'}</td><td class="num"><b>${b ? b.toFixed(2) + ' dB' : '—'}</b></td></tr>`
+        : `<tr><td>${n}</td><td class="num">${s1.toFixed(3)} s</td><td class="num">${s2.toFixed(3)} s</td></tr>`).join('');
+      $('bsNote').textContent = m === 'psnr'
+        ? '批大小 2、3、4 下修复都成立，4 个 wave、两张卡之间结果一致。'
+        : '去噪循环每步耗时完全相同；整批墙钟时间差异在 ±0.07 s 内。';
+    }
+    bindSeg('m', setM);
+    setM('psnr');
+  </script>
+</body>
+</html>

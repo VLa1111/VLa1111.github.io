@@ -1,1 +1,178 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>端侧推理 infra | 余奕辰</title><link rel="stylesheet" href="../assets/style.css"></head><body><div class="project-shell"><aside class="project-nav"><a href="../index.html">← overview</a><p>EXPERIENCES</p><a href="vllm-omni.html">01 vLLM-Omni</a><a class="selected" href="edge-inference.html">02 Edge inference</a><a href="research.html">03 ExpRL research</a></aside><main class="project-main"><div class="breadcrumb">~/experience / <b>edge-inference.md</b></div><p class="label">HIKVISION RESEARCH · 2026.06 — 09</p><h1>在端侧约束里，<br>让模型稳定落地。</h1><p class="lead">高性能计算部：端侧 infra、异构推理与 NPU 量化。工作覆盖模型转换、精度闭环、计算图优化和移动 GPU 算子调优。</p><section class="technical-note"><span>DELIVERY SCOPE</span><p>31 个业务模型完成 ONNX 预处理、INT8 量化、格式转换、板端推理及精度比对。</p></section><section class="note-list"><article><span>01</span><div><h3>量化校准：解决宽动态输出饱和</h3><p>用 ONNX Runtime 模拟量化定位 Scale 失衡，将校准策略调整为 minmax 覆盖浮点范围，板端平均余弦提升至 <b>0.99</b>。</p></div></article><article><span>02</span><div><h3>计算图：绕开 NPU 编译的维度约束</h3><p>将 BatchNorm 折叠进前驱 Gemm；OCR INT8 Decoder 的 ConvTranspose 等价替换为共有算子链，整体余弦由 <b>0.68 提升至 0.99</b>。</p></div></article><article><span>03</span><div><h3>Kernel：优化 NMS 访存瓶颈</h3><p>使用 float4 向量装载与面积预计算优化全局内存访问；Mali-G57、Adreno642L 板端满载获得 <b>1.32–1.44×</b> 稳定加速。</p></div></article></section></main></div></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>端侧 NPU 部署 · 余奕辰</title>
+  <meta name="description" content="海康威视研究院实习：31 个业务模型的端侧 NPU 部署，量化校准、计算图改写与移动 GPU 算子优化。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/home.css">
+  <link rel="stylesheet" href="../assets/case.css">
+  <style>
+    .hist { width: 100%; height: auto; display: block; }
+    .hist .b { fill: var(--accent); }
+    .hist .b.clip { fill: var(--warn); }
+    .hist .range { fill: var(--ok-bg); }
+    .hist .edge { stroke: var(--ok); stroke-width: 2; }
+    .hist text { font: 10px var(--mono); fill: var(--muted); }
+    .mem { display: grid; grid-template-columns: repeat(16, 1fr); gap: 3px; margin: 8px 0 4px; }
+    .mem i { height: 26px; border-radius: 3px; background: #dfe6f3; transition: background .12s; }
+    .mem i.ld { background: var(--accent); }
+    .cnt { font: 500 28px var(--mono); color: var(--accent); margin: 12px 0 0; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="../index.html">余奕辰</a>
+    <nav><a href="../index.html">经历</a></nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="kicker">海康威视研究院 · 高性能计算部 · 2026.06 — 2026.09</p>
+      <h1>31 个模型上板，<br>精度要和浮点对得上。</h1>
+      <p class="lede">实习期间负责车牌识别、OCR、人脸分析等业务模型的端侧 NPU 部署。每个模型都要走完 ONNX 预处理、INT8 量化、格式转换、板端推理和精度比对。这一页挑出其中三个典型问题：量化饱和、编译不兼容，以及一个访存受限的算子。</p>
+      <p class="meta">端侧 infra · 异构推理 · NPU 量化 · Mali-G57 / Adreno642L</p>
+    </section>
+
+    <section class="step">
+      <p class="kicker">01 · 量化校准</p>
+      <h2>人脸关键点的输出动态范围很宽，<br>INT8 范围没盖住就会饱和。</h2>
+      <p>INT8 只有 256 个格子，量化范围决定 scale。范围收得太窄，主体精度高，但两端的大值全被截到边界，关键点坐标就错了。我用 ONNX Runtime 模拟量化，定位到这个全连接输出的 scale 失衡，把校准策略改成 minmax，让范围覆盖完整的浮点区间。切换两种范围看哪些值被截断。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="校准范围">
+          <button type="button" data-cal="narrow" aria-pressed="true">范围偏窄</button>
+          <button type="button" data-cal="minmax" aria-pressed="false">minmax</button>
+        </div>
+        <svg class="hist" id="hist" viewBox="0 0 640 200" role="img" aria-label="输出值分布与量化范围示意"></svg>
+        <p class="verdict" id="calVerdict"></p>
+        <p class="caption">分布形状为示意。实测结果：调整后板端平均余弦相似度提升至 0.99。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">02 · 计算图改写</p>
+      <h2>NPU 编译不认的结构，<br>换成数学上等价、后端支持的写法。</h2>
+      <p>两个模型的问题出在计算图上，不在权重上。一个是算子融合后产生了后端维度约束不支持的 2D 计算块；另一个是 INT8 Decoder 里一个算子的误差逐层累积。选一个案例看改写前后的结构。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="案例">
+          <button type="button" data-g="bn" aria-pressed="true">多任务分类 · BN 折叠</button>
+          <button type="button" data-g="ct" aria-pressed="false">OCR Decoder · ConvTranspose</button>
+        </div>
+        <div class="seg" role="group" aria-label="版本">
+          <button type="button" data-gv="before" aria-pressed="true">改写前</button>
+          <button type="button" data-gv="after" aria-pressed="false">改写后</button>
+        </div>
+        <div class="flow" id="gFlow"></div>
+        <div class="code" id="gCode" style="margin-top:18px"></div>
+        <p class="delta" id="gRes"></p>
+        <p class="caption" id="gCap"></p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">03 · NMS 算子</p>
+      <h2>瓶颈在读显存，<br>那就一次多读一点、少算一点。</h2>
+      <p>把 CPU 上的业务算子移植到移动 GPU（Mali-G57、Adreno642L）后，NMS 的瓶颈是全局内存访问。每个框是 4 个 float 坐标：逐个标量读取要发 4 次读请求，float4 向量装载一次读完。框的面积也提前算好存起来，不再在每次两两比较 IoU 时重复计算。播放下面的示意动画，比较读取一批框的请求次数。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="版本">
+          <button type="button" data-nms="scalar" aria-pressed="true">标量读取</button>
+          <button type="button" data-nms="vec" aria-pressed="false">float4 + 面积预计算</button>
+        </div>
+        <button type="button" class="btn-sm" id="nmsPlay">播放</button>
+        <div class="mem" id="mem" aria-hidden="true"></div>
+        <p class="caption">每格是 1 个 float，4 格一个框，共 4 个框。</p>
+        <p class="cnt" id="nmsCnt">—</p>
+        <p class="caption">动画只演示访存方式。实测：两款移动 GPU 板端满载下稳定加速 1.32–1.44×。</p>
+      </div>
+    </section>
+
+    <section class="contact">
+      <a class="back" href="../index.html">← 返回经历</a>
+      <a class="back" href="momenta.html">下一段：Momenta →</a>
+    </section>
+  </main>
+
+  <footer>© 2026 余奕辰</footer>
+
+  <script src="../assets/case.js"></script>
+  <script>
+    // 01 histogram (illustrative): dense core around 0 with a long right tail
+    const BINS = 48, W = 640, H = 160, X0 = 20, BW = (W - 2 * X0) / BINS;
+    const counts = Array.from({ length: BINS }, (_, i) => {
+      const x = i / BINS;
+      return Math.exp(-((x - 0.22) ** 2) / 0.006) * 100 + (x > 0.55 ? 7 * Math.exp(-(x - 0.55) * 4) : 0) + 1.2;
+    });
+    const maxC = Math.max(...counts);
+    function setCal(mode) {
+      const hi = mode === 'minmax' ? BINS : 26;
+      const xs = X0, xe = X0 + hi * BW;
+      let s = `<rect class="range" x="${xs}" y="0" width="${xe - xs}" height="${H}"/>`;
+      counts.forEach((c, i) => {
+        const h = Math.max(2, c / maxC * (H - 10));
+        s += `<rect class="b${i >= hi ? ' clip' : ''}" x="${X0 + i * BW + 1}" y="${H - h}" width="${BW - 2}" height="${h}"/>`;
+      });
+      s += `<line class="edge" x1="${xs}" y1="0" x2="${xs}" y2="${H}"/><line class="edge" x1="${xe}" y1="0" x2="${xe}" y2="${H}"/>`;
+      s += `<text x="${xs}" y="${H + 20}">INT8 范围下界</text><text x="${Math.min(xe, W - 90) - 70}" y="${H + 20}">INT8 范围上界</text>`;
+      s += `<text x="${W - 150}" y="16">${mode === 'minmax' ? '无截断' : '橙色：被截到上界'}</text>`;
+      $('hist').innerHTML = s;
+      $('calVerdict').innerHTML = mode === 'minmax'
+        ? '<span class="pill ok">minmax</span> 范围覆盖完整浮点区间，尾部大值不再饱和，代价是每格更粗。对这个输出来说，保住大值更重要。'
+        : '<span class="pill warn">饱和</span> 主体分辨率高，但尾部的大值全被截成同一个数，关键点坐标偏差集中在这里。';
+    }
+    bindSeg('cal', setCal);
+    setCal('narrow');
+
+    // 02 graph rewrite
+    const G = {
+      bn: {
+        before: [['Gemm', ''], ['BatchNorm', 'miss'], ['…', ''], ['NPU 编译：2D 计算块不满足维度约束', 'miss']],
+        after:  [['Gemm（已折叠 BN）', 'hit'], ['…', ''], ['NPU 编译通过', 'hit']],
+        code: 'W\' = W · γ / √(σ² + ε)\nb\' = (b − μ) · γ / √(σ² + ε) + β\n<em>BN 的仿射变换并进前驱 Gemm 的权重和偏置，数学上等价</em>',
+        res: '6 个分类头余弦 > 0.99', cap: '折叠后消除了融合产生的异常计算块。'
+      },
+      ct: {
+        before: [['Decoder 层', ''], ['ConvTranspose（INT8）', 'miss'], ['误差逐层累积', 'miss']],
+        after:  [['Decoder 层', ''], ['等价的常用算子链（INT8）', 'hit'], ['误差可控', 'hit']],
+        code: 'ConvTranspose  ≡  后端精度表现更好的常用算子组合\n<em>等价替换后重新量化，再与浮点结果做板端比对</em>',
+        res: '整体余弦 0.68 → 0.99', cap: 'OCR 多任务模型 NPU INT8 Decoder 路径。'
+      }
+    };
+    let g = 'bn', gv = 'before';
+    function renderG() {
+      const d = G[g];
+      $('gFlow').innerHTML = d[gv].map(([t, c]) => `<span class="node ${c}">${t}</span>`).join('<span class="arrow">→</span>');
+      $('gCode').innerHTML = d.code;
+      $('gCode').style.display = gv === 'after' ? 'block' : 'none';
+      $('gRes').textContent = gv === 'after' ? d.res : '';
+      $('gCap').textContent = gv === 'after' ? d.cap : '切到「改写后」查看等价变换。';
+    }
+    bindSeg('g', v => { g = v; renderG(); });
+    bindSeg('gv', v => { gv = v; renderG(); });
+    renderG();
+
+    // 03 NMS memory access (illustrative)
+    const mem = $('mem'), cells = Array.from({ length: 16 }, () => mem.appendChild(document.createElement('i')));
+    let nms = 'scalar', timer;
+    function resetNms() { clearInterval(timer); cells.forEach(c => c.className = ''); $('nmsCnt').textContent = '—'; }
+    bindSeg('nms', v => { nms = v; resetNms(); });
+    $('nmsPlay').addEventListener('click', () => {
+      resetNms();
+      const step = nms === 'scalar' ? 1 : 4;
+      let k = 0, req = 0;
+      timer = setInterval(() => {
+        for (let j = k; j < k + step; j++) cells[j].className = 'ld';
+        req++; k += step;
+        $('nmsCnt').textContent = `${req} 次读请求`;
+        if (k >= 16) {
+          clearInterval(timer);
+          if (nms === 'vec') $('nmsCnt').textContent = `${req} 次读请求，面积直接取预计算结果`;
+          else $('nmsCnt').textContent = `${req} 次读请求，面积每次比较时重算`;
+        }
+      }, nms === 'scalar' ? 120 : 360);
+    });
+  </script>
+</body>
+</html>

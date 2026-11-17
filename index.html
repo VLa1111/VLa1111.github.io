@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>余奕辰 · 过往经历</title>
-  <meta name="description" content="余奕辰的科研与开源经历：vLLM-Omni 贡献、端侧 NPU 部署、ExpRL 无人机探索。">
+  <title>余奕辰 · 经历</title>
+  <meta name="description" content="余奕辰的经历：vLLM-Omni 开源贡献、海康威视端侧 NPU 部署、Momenta 泊车感知、ExpRL 无人机自主探索。">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -12,41 +12,16 @@
 </head>
 <body>
   <header class="top">
-    <a class="brand" href="#top">余奕辰</a>
+    <a class="brand" href="index.html">余奕辰</a>
     <nav>
-      <a href="#experience">经历</a>
-      <a href="#skills">技能</a>
-      <a href="#education">教育</a>
-      <a href="#contact">联系</a>
+      <a href="https://github.com/VLa1111" target="_blank" rel="noreferrer">GitHub ↗</a>
     </nav>
   </header>
 
-  <main id="top">
-    <section class="hero">
-      <p class="kicker">MASTER'S · HARBIN ENGINEERING UNIVERSITY</p>
-      <h1>余奕辰</h1>
-      <p class="lede">关注大模型推理性能与端侧部署。做过扩散模型服务的显存与调度优化，也做过 31 个模型的 NPU 落地。</p>
-      <p class="meta">求职方向：推理优化 / 量化部署</p>
-      <a class="btn" href="#experience">看经历</a>
-      <a class="btn ghost" href="https://github.com/VLa1111" target="_blank" rel="noreferrer">GitHub ↗</a>
-    </section>
-
+  <main>
     <section class="block" id="experience">
-      <h2><span>01</span>经历</h2>
+      <h2>经历</h2>
       <ol class="timeline">
-
-        <li class="item">
-          <div class="when">2025.12 — 2026.04</div>
-          <div>
-            <h3>Momenta · 泊车感知算法</h3>
-            <p class="role">算法开发 · 离线评测 · 数据闭环</p>
-            <ul class="bullets">
-              <li>参与 APA Parking Fusion 模块，设计 IOU/Track ID 匹配与记忆触发逻辑，降低障碍物闪现/消失对规划的扰动。</li>
-              <li>开发车位感知误检/漏检 Checker，按车位类型拆分指标；完成 63 组机械车位 FN 回归。</li>
-              <li>开发真值清洗脚本，清理影响障碍物评测置信度的脏数据。</li>
-            </ul>
-          </div>
-        </li>
 
         <li class="item" id="vllm-omni">
           <div class="when">开源贡献</div>
@@ -54,14 +29,13 @@
             <h3>vLLM-Omni · 多模态推理优化</h3>
             <p class="role">社区 contributor · DiT 显存 / 动态 batching / 性能分析</p>
             <ul class="prs">
-              <li><span class="tag ok">MERGED</span><a href="https://github.com/vllm-project/vllm-omni/pull/7774" target="_blank" rel="noreferrer">#7774</a> VAE slicing / tiling 接通 DiT 解码，3072² tiling 峰值显存 22.1 → 2.7 GB</li>
-              <li><span class="tag ok">MERGED</span><a href="https://github.com/vllm-project/vllm-omni/pull/6577" target="_blank" rel="noreferrer">#6577</a> TTS 并发 benchmark 增加首音延迟 P50 / P99</li>
-              <li><span class="tag open">OPEN</span><a href="https://github.com/vllm-project/vllm-omni/pull/9040" target="_blank" rel="noreferrer">#9040</a> 按 prompt 长度组批，保住 CUDA Graph 路径，混合长度文生图吞吐 +19.8%</li>
-              <li><span class="tag open">OPEN</span><a href="https://github.com/vllm-project/vllm-omni/pull/6897" target="_blank" rel="noreferrer">#6897</a> 12 GB 显存预算内运行 34.6 GB 文生图模型，modelwise / layerwise CPU offload，峰值 11.5 GiB</li>
+              <li><span class="tag ok">MERGED</span><a href="experiences/vae-tiling.html">#7774</a> VAE slicing / tiling 接通 DiT 解码；单独测解码，3072² tiling 峰值 22,146 → 2,748 MiB</li>
+              <li><span class="tag ok">MERGED</span><a href="experiences/tts-ttfp.html">#6577</a> TTS 并发 benchmark 增加首音延迟 P50 / P99</li>
+              <li><span class="tag open">OPEN</span><a href="experiences/qwen-image-2-1.html#pr9040">#9040</a> 按 prompt 长度组批，保住 CUDA Graph 路径，混合长度场景吞吐 +6.4% / +5.1%</li>
+              <li><span class="tag open">OPEN</span><a href="experiences/qwen-image-2-1.html#pr10376">#10376</a> 由 #9040 衍生：定位混合长度批次输出漂移的根因（图像 RoPE 位置随整批 padding 偏移），逐请求计算后 PSNR 27.66 → 45.16 dB，速度不变</li>
+              <li><span class="tag open">OPEN</span><a href="experiences/cpu-offload.html">#6897</a> 12 GB 显存预算内运行 34.6 GB 文生图模型，modelwise / layerwise CPU offload，峰值 11.5 GiB</li>
             </ul>
-            <a class="inline" href="experiences/vllm-omni.html">查看技术细节 →</a>
-            <a class="inline" href="experiences/vae-tiling.html">交互：#7774 显存排查 →</a>
-            <a class="inline" href="experiences/qwen-image-2-1.html">交互：#9040 组批 →</a>
+            <p class="nolink">点 PR 编号查看交互式详情。</p>
           </div>
         </li>
 
@@ -75,65 +49,40 @@
               <li>OCR INT8 Decoder 的 ConvTranspose 替换为等价算子链，整体余弦由 0.68 提升至 0.99。</li>
               <li>NMS 算子 float4 向量装载 + 面积预计算，Mali-G57 / Adreno642L 板端满载 1.32–1.44× 加速。</li>
             </ul>
-            <a class="inline" href="experiences/edge-inference.html">查看技术细节 →</a>
+            <a class="inline" href="experiences/edge-inference.html">查看详情 →</a>
+          </div>
+        </li>
+
+        <li class="item">
+          <div class="when">2025.12 — 2026.04</div>
+          <div>
+            <h3>Momenta · 泊车感知算法</h3>
+            <p class="role">泊车感知业务算法 · 离线集测 · 数据闭环</p>
+            <ul class="bullets">
+              <li>参与 APA Parking Fusion 模块，设计 IOU/Track ID 匹配与记忆触发逻辑，降低障碍物闪现/消失对规划的扰动。</li>
+              <li>开发车位感知误检/漏检 Checker，按车位类型拆分指标；完成 63 组机械车位 FN 回归。</li>
+              <li>开发真值清洗脚本，清理影响障碍物评测置信度的脏数据。</li>
+            </ul>
+            <a class="inline" href="experiences/momenta.html">查看详情 →</a>
           </div>
         </li>
 
         <li class="item">
           <div class="when">2026.04 — 至今</div>
           <div>
-            <h3>ExpRL · 基于自监督价值预训练的无人机自主探索</h3>
+            <h3>ExpRL · 基于自监督轨迹价值预训练的无人机自主探索</h3>
             <p class="role">科研项目 · 决策模型 · 数采框架 · 端侧部署</p>
             <ul class="bullets">
-              <li>设计空间 token + 多层 CA/SA 的决策模型，覆盖率稳定 92.8%。</li>
-              <li>Isaac Sim 多卡并行采集（16 worker × 8 env），相比单卡效率提升 18 倍，累计 8960 条样本。</li>
-              <li>TensorRT + CUDA Graph 捕获预处理到推理全链路，Jetson Orin NX 单决策由约 15 ms 降至 1.5–3 ms。</li>
+              <li>地图空间 token + 候选路径 query 的交叉注意力价值网络（49 万参数），带可学习衰减的决策历史；Isaac Sim 6 场景平均覆盖率 92.8%。</li>
+              <li>Isaac Sim 多卡并行采集（16 worker × 8 env），累计 8960 条链式标签样本，0 条审计剔除。</li>
+              <li>GPU 栅格化 + TensorRT + CUDA Graph 捕获整条决策链路，单决策 4.21 → 0.454 ms，闭环选择零失配。</li>
             </ul>
-            <a class="inline" href="experiences/research.html">查看技术细节 →</a>
+            <a class="inline" href="experiences/research.html">查看详情 →</a>
+            <a class="inline" href="experiences/exprl-vlm.html">VLM 版本 →</a>
           </div>
         </li>
 
       </ol>
-    </section>
-
-    <section class="block" id="skills">
-      <h2><span>02</span>技能</h2>
-      <div class="grid3">
-        <article>
-          <h3>推理系统</h3>
-          <p>CUDA Graph、batching、profiling（nsys / ncu），vLLM 与扩散模型服务。</p>
-        </article>
-        <article>
-          <h3>量化与部署</h3>
-          <p>INT8 校准、ONNX 转换、NPU 板端部署与精度比对，TensorRT。</p>
-        </article>
-        <article>
-          <h3>语言与框架</h3>
-          <p>Python、C/C++、CUDA、OpenCL、PyTorch、Docker、Git，熟悉 Isaac Sim。</p>
-        </article>
-      </div>
-    </section>
-
-    <section class="block" id="education">
-      <h2><span>03</span>教育</h2>
-      <div class="edu">
-        <div>
-          <b>哈尔滨工程大学</b>
-          <p>控制科学与工程 · 硕士（保研）· 2024.09 — 至今</p>
-          <p>共一发表 IEEE-IROS 会议论文一篇，期刊在投一篇。</p>
-        </div>
-        <div>
-          <b>西南石油大学</b>
-          <p>电气工程与智能控制 · 学士 · 2020.09 — 2024.06</p>
-          <p>专业排名前 3%。全国大学生光电设计竞赛西南赛区一等奖。</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="contact" id="contact">
-      <h2 class="mono">04 · 联系</h2>
-      <p>邮箱：<a href="mailto:vyu112@foxmail.com">vyu112@foxmail.com</a></p>
-      <p>GitHub：<a href="https://github.com/VLa1111" target="_blank" rel="noreferrer">github.com/VLa1111</a></p>
     </section>
   </main>
 

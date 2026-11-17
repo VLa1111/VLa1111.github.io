@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>泊车感知 · 余奕辰</title>
+  <meta name="description" content="Momenta 实习：APA 泊车融合模块的障碍物稳定性逻辑、车位感知误检/漏检评测和真值数据清洗。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/home.css">
+  <link rel="stylesheet" href="../assets/case.css">
+  <style>
+    .tl { display: grid; grid-template-columns: 70px repeat(12, 1fr); gap: 3px; align-items: center; font: 12px var(--mono); margin-bottom: 6px; }
+    .tl i { height: 24px; border-radius: 3px; background: var(--bg); border: 1px solid var(--line); }
+    .tl i.on { background: var(--accent); border-color: var(--accent); }
+    .tl i.mem { background: #9fb6e6; border-color: #9fb6e6; }
+    .tl i.gap { background: var(--warn-bg); border-color: var(--warn); }
+    .tl .lab { color: var(--muted); }
+    .rules { display: grid; gap: 8px; }
+    .rules label { display: flex; gap: 10px; align-items: baseline; font-size: 15px; cursor: pointer; }
+    .rules input { accent-color: var(--accent); }
+    .kept { font: 500 28px var(--mono); color: var(--accent); margin: 16px 0 0; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="../index.html">余奕辰</a>
+    <nav><a href="../index.html">经历</a></nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="kicker">MOMENTA · MPILOT 泊车感知 · 2025.12 — 2026.04</p>
+      <h1>障碍物一闪一灭，<br>规划就会急刹和反复重规划。</h1>
+      <p class="lede">实习期间在泊车感知团队做三件事：在 APA Parking Fusion 模块里让近距离障碍物的输出更稳定；给车位感知搭一个能拆开看误检和漏检的评测工具；清洗会污染障碍物评测的真值数据。</p>
+      <p class="meta">泊车感知业务算法 · 离线集测 · 数据闭环</p>
+    </section>
+
+    <section class="step">
+      <p class="kicker">01 · 融合输出的稳定性</p>
+      <h2>检测偶尔漏一帧，<br>融合层不能把障碍物直接删掉。</h2>
+      <p>近距离的行人、两轮车等易受伤害的道路使用者 (VRU) 偶尔会漏检，极近的行人也可能在检测里消失。如果融合模块原样输出，规划会看到障碍物“闪现/消失”，进而刹停或重规划。我设计的逻辑由四部分组成：用 IOU 和 Track ID 做跨帧匹配；漏检时触发记忆，短时保留目标；目标远离后按距离清除；并抑制残留的假目标。切换下面的模式，看同一段检测序列的融合输出。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="融合策略">
+          <button type="button" data-fz="raw" aria-pressed="true">直接透传</button>
+          <button type="button" data-fz="mem" aria-pressed="false">匹配 + 记忆 + 清除</button>
+        </div>
+        <div class="tl" id="tlDet"></div>
+        <div class="tl" id="tlOut"></div>
+        <p class="verdict" id="fzVerdict"></p>
+        <p class="caption">12 帧示意序列：第 5、6 帧检测漏掉了近处行人，第 10 帧起行人已离开。浅蓝为记忆保留帧。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">02 · 车位感知评测</p>
+      <h2>一个总的漏检率，<br>看不出问题集中在哪类车位。</h2>
+      <p>我开发了车位感知 (DDPSD) 的误检/漏检 Checker：按普通车位、机械车位、进入自动泊车前的机械车位拆分指标，设计 FN/FP 归因因子、case 过滤和高亮输出，让研发能快速找到某一类车位的误检/漏检模式。用它完成了 63 组机械车位漏检 (FN) 数据的回归。切换视图，对比汇总和拆分后能看到的信息。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="指标视图">
+          <button type="button" data-pv="all" aria-pressed="true">汇总</button>
+          <button type="button" data-pv="split" aria-pressed="false">按车位类型拆分</button>
+        </div>
+        <div class="bars" id="psBars"></div>
+        <p class="verdict" id="psVerdict"></p>
+        <p class="caption">条形长度为示意，不对应内部数据。实际产出：Checker 工具与 63 组机械车位 FN 回归。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">03 · 真值清洗</p>
+      <h2>评测的可信度，<br>取决于真值本身是不是干净的。</h2>
+      <p>障碍物评测 (DDOBS) 的真值里混有脏 case：位姿误差大、缺少 ignore 区域、近距离标注有问题、真值漏标。它们会让模型被误判为漏检或误检。我写了清洗脚本，围绕这几类问题建立筛查规则，并结合 Static Map 字段解析和相对位置误差检查。勾选规则，看每条规则针对的问题。</p>
+      <div class="panel">
+        <div class="rules" id="rules"></div>
+        <p class="kept" id="kept"></p>
+        <p class="caption">每条规则对应简历中列出的一类筛查；不展示内部数据量。</p>
+      </div>
+    </section>
+
+    <section class="contact">
+      <a class="back" href="../index.html">← 返回经历</a>
+      <a class="back" href="edge-inference.html">← 上一段：海康威视</a>
+    </section>
+  </main>
+
+  <footer>© 2026 余奕辰</footer>
+
+  <script src="../assets/case.js"></script>
+  <script>
+    // 01 fusion timeline (illustrative)
+    const DET = [1, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0];   // detector sees pedestrian
+    const PRESENT = [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0]; // pedestrian actually near
+    function row(id, label, cls) {
+      $(id).innerHTML = `<span class="lab">${label}</span>` + cls.map(c => `<i class="${c}"></i>`).join('');
+    }
+    row('tlDet', '检测', DET.map(v => v ? 'on' : ''));
+    function setFz(m) {
+      const out = DET.map((v, i) => {
+        if (v) return 'on';
+        if (m === 'raw') return PRESENT[i] ? 'gap' : '';
+        return PRESENT[i] ? 'mem' : '';   // memory bridges short gaps; distance clear drops departed target
+      });
+      row('tlOut', '融合输出', out);
+      $('fzVerdict').innerHTML = m === 'raw'
+        ? '<span class="pill warn">闪烁</span> 第 5、6 帧行人从输出里消失又出现，规划会先放行再急刹。'
+        : '<span class="pill ok">稳定</span> 匹配到同一目标后，漏检帧由记忆补上；行人离开后按距离清除，不留残影。';
+    }
+    bindSeg('fz', setFz);
+    setFz('raw');
+
+    // 02 parking slot metrics (illustrative)
+    const PS = { all: [['全部车位', 6]], split: [['普通车位', 3], ['机械车位', 14], ['进自动前·机械', 11]] }; // relative bar lengths only
+    function setPs(v) {
+      $('psBars').innerHTML = PS[v].map(([n, x]) =>
+        `<div class="bar"><span>${n}</span><div class="t"><div class="f ${x > 10 ? 'warn' : 'on'}" style="width:${x / 16 * 100}%"></div></div><b>${x > 10 ? '偏高' : '—'}</b></div>`).join('');
+      $('psVerdict').textContent = v === 'all'
+        ? '汇总指标看起来还行，没有指向具体问题。'
+        : '拆开后，可以单独看机械车位这类难例。回归聚焦在这里：63 组机械车位 FN case。';
+    }
+    bindSeg('pv', setPs);
+    setPs('all');
+
+    // 03 cleaning rules
+    const RULES = [
+      ['Pose 误差', '自车位姿误差大，真值框投影位置不可信'],
+      ['无 ignore 区域', '本该忽略的区域没标，模型在那里的输出被算成误检'],
+      ['近距离标注', '近距离目标标注不准，影响最关键的距离段'],
+      ['真值漏标', '真值缺目标，模型的正确检测被算成误检'],
+      ['Static Map 解析 + 相对位置误差', '解析地图字段，检查真值与地图的相对位置是否自洽']
+    ];
+    $('rules').innerHTML = RULES.map(([n, d], i) =>
+      `<label><input type="checkbox" data-r="${i}" checked> <span><b>${n}</b> · <span style="color:var(--muted)">${d}</span></span></label>`).join('');
+    function setKept() {
+      const on = document.querySelectorAll('#rules input:checked').length;
+      $('kept').textContent = `${on} / ${RULES.length} 类脏数据被筛出`;
+    }
+    $('rules').addEventListener('change', setKept);
+    setKept();
+  </script>
+</body>
+</html>

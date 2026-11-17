@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CPU Offload · 余奕辰</title>
+  <meta name="description" content="vLLM-Omni PR #6897：为 Boogu-Image 接入 modelwise / layerwise CPU offload 并兼容 TorchAO FP8 权重，FP8 峰值显存 11.5 GiB。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/home.css">
+  <link rel="stylesheet" href="../assets/case.css">
+  <style>
+    .dev { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px; }
+    .dev > div { border: 1px solid var(--line); border-radius: 6px; padding: 12px; background: var(--bg); }
+    .dev h4 { margin: 0 0 10px; font: 12px var(--mono); color: var(--muted); font-weight: 400; }
+    .slots { display: flex; flex-wrap: wrap; gap: 6px; min-height: 34px; }
+    .slots span { padding: 6px 10px; border-radius: 4px; font: 12px var(--mono); background: #dfe6f3; color: var(--ink); transition: background .2s; }
+    .slots span.run { background: var(--accent); color: #fff; }
+    .slots span.pre { background: #9fb6e6; }
+    .stage-lab { font: 13px var(--mono); color: var(--muted); margin: 0 0 12px; }
+    .bar .lim { position: relative; }
+    .lines { position: relative; height: 0; }
+    .tl2 { display: grid; gap: 8px; }
+    .tl2 .row { display: grid; grid-template-columns: 90px 1fr 70px; gap: 12px; align-items: center; font: 13px var(--mono); }
+    .tl2 .track { position: relative; height: 22px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+    .tl2 .track span { position: absolute; top: 0; height: 100%; }
+    @media (max-width: 760px) { .dev { grid-template-columns: 1fr; } .tl2 .row { grid-template-columns: 60px 1fr 56px; } }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="../index.html">余奕辰</a>
+    <nav>
+      <a href="../index.html">经历</a>
+      <a href="https://github.com/vllm-project/vllm-omni/pull/6897" target="_blank" rel="noreferrer">PR ↗</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="kicker">VLLM-OMNI · PR #6897 · OPEN</p>
+      <h1>34.6 GiB 的模型，<br>要塞进 12 GiB 显存。</h1>
+      <p class="lede">Boogu-Image 的 BF16 权重有 34.6 GiB，在 24 GiB 的 RTX 4090 上直接加载会 OOM。社区的目标是让它在 12 GiB 的消费级显卡上也能跑。这一页按顺序走一遍：FP8 权重为什么挪不动，两种 CPU offload 怎么把模型拆开放，以及显存、延迟和正确性的实测。</p>
+      <p class="meta">RTX 4090 · 512² · 10 步 · FP8 + modelwise 峰值 11,786 MiB（11.5 GiB）</p>
+    </section>
+
+    <section class="step">
+      <p class="kicker">01 · FP8 权重挪不动</p>
+      <h2>TorchAO 的 FP8 张量是个封装类型，<br>现有的 offloader 不认识它。</h2>
+      <p>FP8 checkpoint 加载后，权重是 TorchAO 的 <code>Float8Tensor</code> 子类。offload 后端按普通参数在 CPU 和 GPU 之间搬运，碰到这种封装类型就处理不了。我没有改 offload 框架，而是在加载后把它解包成普通的 FP8 权重加 FP32 行缩放，线性层的前向保留 TorchAO 原来的反量化计算。切换版本看权重能走到哪一步。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="版本">
+          <button type="button" data-fp="before" aria-pressed="true">修改前</button>
+          <button type="button" data-fp="after" aria-pressed="false">修改后</button>
+        </div>
+        <div class="flow" id="fpFlow"></div>
+        <p class="verdict" id="fpVerdict"></p>
+        <p class="caption">解包后的线性层输出与 TorchAO 反量化路径逐位一致（rtol = atol = 0）。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">02 · 两种拆法</p>
+      <h2>按阶段整块换，<br>或者按层流式搬。</h2>
+      <p>文生图分三个阶段：多模态语言模型 (MLLM) 编码 prompt，DiT 做多步去噪，VAE 解码出图。modelwise 让各阶段的模型轮流上 GPU，同一时刻只留正在用的那个。layerwise 更细：DiT 的 block 一层层流式加载，计算当前层时异步预取下一层。点“下一步”逐步走一遍。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="offload 模式">
+          <button type="button" data-om="model" aria-pressed="true">modelwise</button>
+          <button type="button" data-om="layer" aria-pressed="false">layerwise</button>
+        </div>
+        <button type="button" class="btn-sm" id="omNext">下一步</button>
+        <p class="stage-lab" id="omStage" style="margin-top:14px"></p>
+        <div class="dev">
+          <div><h4>GPU</h4><div class="slots" id="gpu"></div></div>
+          <div><h4>CPU 内存</h4><div class="slots" id="cpu"></div></div>
+        </div>
+        <p class="caption">深蓝：正在计算；浅蓝：异步预取中。示意，block 数不代表真实层数。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">03 · 显存与延迟</p>
+      <h2>BF16 从 OOM 变成能跑，<br>FP8 + modelwise 压到 12 GiB 以下。</h2>
+      <p>RTX 4090，512²，10 步去噪，1 次预热后测 3 次稳态请求，显存用 <code>nvidia-smi</code> 按进程读取。省显存要付延迟：权重要在 CPU 和 GPU 之间反复搬运。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="精度">
+          <button type="button" data-prec="fp8" aria-pressed="true">FP8 checkpoint</button>
+          <button type="button" data-prec="bf16" aria-pressed="false">BF16 checkpoint</button>
+        </div>
+        <div class="seg" role="group" aria-label="指标">
+          <button type="button" data-met="mem" aria-pressed="true">峰值显存</button>
+          <button type="button" data-met="lat" aria-pressed="false">端到端延迟</button>
+        </div>
+        <div class="bars" id="resBars"></div>
+        <p class="verdict" id="resVerdict"></p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">04 · layerwise 慢在哪</p>
+      <h2>每步去噪，搬权重比算还久，<br>只有约 30% 的传输被计算盖住。</h2>
+      <p>对 FP8 layerwise 做了 profiling：每个去噪步里，CPU→GPU 传输约 451 ms，计算约 137 ms，暴露出来的传输等待约 314 ms。PR 因此加了 <code>--dlo-resident-layers N</code>：让 N 个 DiT block 在去噪全程常驻 GPU，用一点显存换更少的重复搬运。切换常驻层数看取舍。</p>
+      <div class="panel">
+        <div class="tl2" style="margin-bottom:24px">
+          <div class="row"><span>H2D 传输</span><div class="track"><span style="left:0;width:76.7%;background:#9fb6e6"></span></div><b>~451 ms</b></div>
+          <div class="row"><span>计算</span><div class="track"><span style="left:0;width:23.3%;background:var(--accent)"></span></div><b>~137 ms</b></div>
+          <div class="row"><span>暴露等待</span><div class="track"><span style="left:23.3%;width:53.4%;background:var(--warn)"></span></div><b>~314 ms</b></div>
+        </div>
+        <div class="seg" role="group" aria-label="精度">
+          <button type="button" data-dp="fp8" aria-pressed="true">FP8</button>
+          <button type="button" data-dp="bf16" aria-pressed="false">BF16</button>
+        </div>
+        <div class="seg" role="group" aria-label="常驻层数">
+          <button type="button" data-dl="0" aria-pressed="true">常驻 0 层</button>
+          <button type="button" data-dl="4" aria-pressed="false">常驻 4 层</button>
+        </div>
+        <div class="scroll">
+          <table><thead><tr><th></th><th>峰值显存</th><th>端到端延迟</th></tr></thead><tbody id="dloBody"></tbody></table>
+        </div>
+        <p class="verdict" id="dloVerdict"></p>
+        <p class="caption">分布式 layerwise offload（--enable-distributed-layerwise-offload --dlo-no-use-allgather）。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">05 · 正确性与边界</p>
+      <h2>换了放法，<br>输出不能变。</h2>
+      <div class="panel">
+        <ul class="limits" style="margin:0;color:var(--ink)">
+          <li>BF16：所有 offload 配置之间输出逐字节一致。</li>
+          <li>FP8：各 offload 配置之间逐字节一致；与不 offload 的基线有轻微数值差异，PSNR 49.72 dB。</li>
+          <li>回归测试：Boogu-Image 168 通过、1 跳过（需要可选的 boogu 模块）；offloader 123 通过。</li>
+        </ul>
+        <ul class="limits">
+          <li>只测了 RTX 4090、512²、10 步；12 GiB 目标是按峰值显存判断的，没有在 12 GiB 实卡上跑。</li>
+          <li>PR 仍在评审中，尚未合并。</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="contact">
+      <a class="back" href="../index.html">← 返回经历</a>
+      <a class="back" href="qwen-image-2-1.html">#9040 组批 →</a>
+      <a class="back" href="https://github.com/vllm-project/vllm-omni/pull/6897" target="_blank" rel="noreferrer">打开 PR #6897 ↗</a>
+    </section>
+  </main>
+
+  <footer>© 2026 余奕辰</footer>
+
+  <script src="../assets/case.js"></script>
+  <script>
+    // 01 FP8 repack
+    function setFp(v) {
+      const after = v === 'after';
+      const nodes = after
+        ? [['TorchAO Float8Tensor', ''], ['解包：FP8 权重 + FP32 行缩放', 'hit'], ['offloader 搬运', 'hit'], ['前向：等价反量化', 'hit']]
+        : [['TorchAO Float8Tensor', ''], ['offloader 搬运', 'miss'], ['无法管理该参数类型', 'miss']];
+      $('fpFlow').innerHTML = nodes.map(([t, c]) => `<span class="node ${c}">${t}</span>`).join('<span class="arrow">→</span>');
+      $('fpVerdict').textContent = after
+        ? '权重变成普通 FP8 参数，现有的两种 offload 后端不用改就能管理。'
+        : '量化后的权重是封装类型，offload 后端搬不动，FP8 模型无法开启 offload。';
+    }
+    bindSeg('fp', setFp);
+    setFp('before');
+
+    // 02 offload walkthrough (illustrative)
+    const MODEL = [
+      { s: 'MLLM 编码 prompt', gpu: [['MLLM', 'run']], cpu: ['DiT', 'VAE'] },
+      { s: 'DiT 去噪（多步）', gpu: [['DiT', 'run']], cpu: ['MLLM', 'VAE'] },
+      { s: 'VAE 解码', gpu: [['VAE', 'run']], cpu: ['MLLM', 'DiT'] }
+    ];
+    const B = 6, LAYER = [{ s: 'MLLM 编码 prompt', gpu: [['MLLM', 'run']], cpu: ['VAE', ...Array.from({ length: B }, (_, i) => 'B' + i)] }];
+    for (let i = 0; i < B; i++) {
+      const gpu = [['B' + i, 'run']];
+      if (i + 1 < B) gpu.push(['B' + (i + 1), 'pre']);
+      LAYER.push({ s: `DiT 去噪 · 计算 block ${i}${i + 1 < B ? `，预取 block ${i + 1}` : ''}`, gpu, cpu: ['MLLM', 'VAE', ...Array.from({ length: B }, (_, j) => 'B' + j).filter(n => !gpu.some(g => g[0] === n))] });
+    }
+    LAYER.push({ s: 'VAE 解码', gpu: [['VAE', 'run']], cpu: ['MLLM', ...Array.from({ length: B }, (_, i) => 'B' + i)] });
+    let om = 'model', k = 0;
+    function renderOm() {
+      const seq = om === 'model' ? MODEL : LAYER, st = seq[k];
+      $('omStage').textContent = `${k + 1} / ${seq.length} · ${st.s}`;
+      $('gpu').innerHTML = st.gpu.map(([n, c]) => `<span class="${c}">${n}</span>`).join('');
+      $('cpu').innerHTML = st.cpu.map(n => `<span>${n}</span>`).join('');
+    }
+    bindSeg('om', v => { om = v; k = 0; renderOm(); });
+    $('omNext').addEventListener('click', () => { k = (k + 1) % (om === 'model' ? MODEL : LAYER).length; renderOm(); });
+    renderOm();
+
+    // 03 results (PR #6897, RTX 4090)
+    const RES = {
+      bf16: [['不 offload', null, null], ['modelwise', 21924, 5.66], ['layerwise', 21380, 9.18]],
+      fp8:  [['不 offload', 21132, 1.61], ['modelwise', 11786, 3.97], ['layerwise', 13194, 4.83]]
+    };
+    let prec = 'fp8', met = 'mem';
+    function renderRes() {
+      const rows = RES[prec], max = met === 'mem' ? 24576 : 10;
+      $('resBars').innerHTML = rows.map(([n, m, l]) => {
+        const v = met === 'mem' ? m : l;
+        if (v === null) return `<div class="bar"><span>${n}</span><div class="t"><div class="f warn" style="width:100%"></div></div><b>OOM</b></div>`;
+        const good = met === 'mem' && v < 12288;
+        return `<div class="bar"><span>${n}</span><div class="t"><div class="f ${good ? 'on' : ''}" style="width:${v / max * 100}%"></div></div><b>${met === 'mem' ? v.toLocaleString() + ' MiB' : v + ' s'}</b></div>`;
+      }).join('');
+      $('resVerdict').textContent = prec === 'bf16'
+        ? (met === 'mem' ? '34.6 GiB 的 BF16 权重直接加载会 OOM；两种 offload 都能在 24 GiB 卡上跑起来。' : 'layerwise 每层都要搬权重，比 modelwise 慢不少。')
+        : (met === 'mem' ? 'FP8 + modelwise 峰值 11,786 MiB，低于 12 GiB 目标（蓝色）。' : '不 offload 最快（1.61 s），offload 的代价是 2.5–3 倍延迟。');
+    }
+    bindSeg('prec', v => { prec = v; renderRes(); });
+    bindSeg('met', v => { met = v; renderRes(); });
+    renderRes();
+
+    // 04 resident layers (PR #6897)
+    const DLO = { bf16: { 0: [21038, 9.16], 4: [22014, 8.64] }, fp8: { 0: [13020, 4.77], 4: [13708, 4.58] } };
+    let dp = 'fp8', dl = '0';
+    function renderDlo() {
+      const [m0, l0] = DLO[dp][0], [m, l] = DLO[dp][dl];
+      $('dloBody').innerHTML = `<tr${dl === '4' ? ' class="hl"' : ''}><td>常驻 ${dl} 层</td><td class="num">${m.toLocaleString()} MiB</td><td class="num">${l} s</td></tr>`;
+      $('dloVerdict').textContent = dl === '0'
+        ? '基线：所有 block 每步都重新搬运。'
+        : `显存 +${(m - m0).toLocaleString()} MiB，延迟 −${((1 - l / l0) * 100).toFixed(1)}%。`;
+    }
+    bindSeg('dp', v => { dp = v; renderDlo(); });
+    bindSeg('dl', v => { dl = v; renderDlo(); });
+    renderDlo();
+  </script>
+</body>
+</html>

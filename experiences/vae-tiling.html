@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>VAE Tiling · 余奕辰</title>
-  <meta name="description" content="vLLM-Omni PR #7774：把 VAE slicing / tiling 接通到真正执行解码的 VAE，3072² 解码峰值显存 22.1 → 2.7 GB。">
+  <meta name="description" content="vLLM-Omni PR #7774：把 VAE slicing / tiling 接通到真正执行解码的 VAE，3072² 单张 VAE 解码峰值 22,146 → 2,748 MiB。">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -42,7 +42,7 @@
 
     /* step 3: results */
     .bars { display: grid; gap: 12px; }
-    .bar { display: grid; grid-template-columns: 110px 1fr 70px; gap: 12px; align-items: center; font: 13px var(--mono); }
+    .bar { display: grid; grid-template-columns: 110px 1fr 110px; gap: 12px; align-items: center; font: 13px var(--mono); }
     .bar .t { height: 22px; background: var(--bg); border-radius: 4px; overflow: hidden; }
     .bar .f { height: 100%; background: var(--muted); transition: width .4s; }
     .bar .f.on { background: var(--accent); }
@@ -52,7 +52,7 @@
     .back { display: inline-block; margin: 0 18px 0 0; font-size: 14px; }
     @media (max-width: 760px) {
       .tile-wrap { grid-template-columns: 1fr; }
-      .bar { grid-template-columns: 80px 1fr 60px; }
+      .bar { grid-template-columns: 64px 1fr 96px; }
     }
   </style>
 </head>
@@ -60,8 +60,7 @@
   <header class="top">
     <a class="brand" href="../index.html">余奕辰</a>
     <nav>
-      <a href="../index.html#experience">经历</a>
-      <a href="vllm-omni.html">vLLM-Omni</a>
+      <a href="../index.html">经历</a>
       <a href="https://github.com/vllm-project/vllm-omni/pull/7774" target="_blank" rel="noreferrer">PR ↗</a>
     </nav>
   </header>
@@ -71,22 +70,22 @@
       <p class="kicker">VLLM-OMNI · PR #7774 · MERGED</p>
       <h1 style="font-size:clamp(32px,5vw,48px)">开关打开了，<br>显存却没降。</h1>
       <p class="lede">MammothModa2 在 DiT 解码阶段配置了 VAE slicing / tiling，但峰值显存没有变化。这一页按排查顺序走一遍：配置停在了哪里，tiling 为什么能省显存，以及实测结果。</p>
-      <p class="meta">3072² 解码 · tiling 峰值显存 22.1 → 2.7 GB</p>
+      <p class="meta">单独测 VAE 解码 · 3072² 单张 · tiling 峰值 22,146 → 2,748 MiB</p>
     </section>
 
     <section class="step">
       <p class="kicker">01 · 配置停在了哪一层</p>
       <h2>通用配置抵达了 DIFFUSION stage，<br>但没有传给真正做解码的 <code>gen_vae</code>。</h2>
-      <p>这个 pipeline 把执行解码的 VAE 放在私有成员里。框架按标准方式处理 slicing / tiling 配置，但这份配置没有传到私有的 gen_vae，所以没有报错，也没有生效。切换下面的版本看配置走到哪里。</p>
+      <p><code>vae_use_slicing</code> / <code>vae_use_tiling</code> 已经到达 DiT stage 的配置，但 <code>registry.py</code> 把它们设置在 <code>model.vae</code> 上，而这个 pipeline 用自己的 <code>gen_vae</code> 解码，所以没有报错，也没有生效。修复是在 pipeline 初始化时把这两个标准字段读到 <code>gen_vae</code> 上。切换下面的版本看配置走到哪里。</p>
       <div class="panel">
         <div class="seg" role="group" aria-label="版本">
           <button type="button" data-flow="before" aria-pressed="true">修复前</button>
           <button type="button" data-flow="after" aria-pressed="false">修复后</button>
         </div>
         <div class="flow">
-          <span class="node hit" id="n-cfg">enable_vae_tiling</span><span class="arrow">→</span>
+          <span class="node hit" id="n-cfg">vae_use_tiling</span><span class="arrow">→</span>
           <span class="node hit" id="n-stage">DIFFUSION stage</span><span class="arrow">→</span>
-          <span class="node" id="n-std">通用 VAE 配置入口</span><span class="arrow">/</span>
+          <span class="node" id="n-std">model.vae</span><span class="arrow">/</span>
           <span class="node" id="n-gen">gen_vae（执行 decode）</span>
         </div>
         <p class="verdict" id="verdict"></p>
@@ -96,7 +95,7 @@
     <section class="step">
       <p class="kicker">02 · tiling 为什么省显存</p>
       <h2>整张潜变量一次解码，<br>换成分块逐个解码。</h2>
-      <p>不分块时，整张图的解码中间激活同时驻留显存，峰值随分辨率平方增长。tiling 每次只解码一块，峰值由块大小决定，块之间再做重叠混合消除接缝。下面是示意动画，显存条只表示相对趋势，不是实测曲线。</p>
+      <p>不分块时，整张图的解码中间激活同时驻留显存，峰值大致随像素数增长（实测 1024² 2,638 MiB，3072² 22,146 MiB）。tiling 每次只解码一块，峰值由块大小决定，所以几乎不随分辨率增长。PR 检查了 tiling 输出，没有发现接缝。下面是示意动画，显存条只表示相对趋势，不是实测曲线。</p>
       <div class="panel">
         <div class="seg" role="group" aria-label="解码方式">
           <button type="button" data-mode="full" aria-pressed="true">整图解码</button>
@@ -115,39 +114,35 @@
 
     <section class="step">
       <p class="kicker">03 · 实测结果</p>
-      <h2>两种模式分别对比各自的基线。</h2>
-      <p>以下数字来自 PR 中的基准测试。tiling 与 slicing 的测试配置不同，所以各自和自己的基线比较，不放在同一把尺子上。</p>
+      <h2>单独测 VAE 解码，峰值降得很多；<br>放到整条流水线里，降幅小得多。</h2>
+      <p>以下数字都来自 PR 描述，单位是 MiB。前两项是用 <code>gen_vae</code> 真实权重单独跑解码的基准，只算解码这一步；第三项是整条文生图流水线的整卡峰值，前面的 AR 阶段占了大头。tiling 也不是提速手段：在不分块也放得下的尺寸上，它会让解码变慢。</p>
       <div class="panel">
-        <div class="seg" role="group" aria-label="模式">
-          <button type="button" data-res="tiling" aria-pressed="true">tiling · 3072²</button>
-          <button type="button" data-res="slicing" aria-pressed="false">slicing</button>
+        <div class="seg" role="group" aria-label="测量口径">
+          <button type="button" data-res="tiling" aria-pressed="true">解码 · tiling · 3072² × 1</button>
+          <button type="button" data-res="slicing" aria-pressed="false">解码 · slicing · 2048² × 2</button>
+          <button type="button" data-res="e2e" aria-pressed="false">端到端 · tiling · 1536² × 1</button>
         </div>
         <div class="bars">
           <div class="bar"><span>基线</span><div class="t"><div class="f" id="b0"></div></div><b id="v0"></b></div>
           <div class="bar"><span id="l1">tiling</span><div class="t"><div class="f on" id="b1"></div></div><b id="v1"></b></div>
         </div>
         <p class="delta" id="delta"></p>
-        <p class="caption">解码阶段峰值显存 · 修复后输出由回归测试覆盖</p>
+        <p class="verdict" id="resNote"></p>
+        <p class="caption">RTX PRO 6000 · bf16 · 解码基准每格 2 次预热 + 5 次测量 · 回归测试 165 通过、1 跳过</p>
       </div>
     </section>
 
     <section class="contact">
-      <a class="back" href="vllm-omni.html">← 返回 vLLM-Omni 档案</a>
+      <a class="back" href="../index.html">← 返回经历</a>
+      <a class="back" href="qwen-image-2-1.html">#9040 组批 →</a>
       <a class="back" href="https://github.com/vllm-project/vllm-omni/pull/7774" target="_blank" rel="noreferrer">打开 PR #7774 ↗</a>
     </section>
   </main>
 
   <footer>© 2026 余奕辰</footer>
 
+  <script src="../assets/case.js"></script>
   <script>
-    function bindSeg(attr, fn) {
-      const btns = document.querySelectorAll(`[data-${attr}]`);
-      btns.forEach(b => b.addEventListener('click', () => {
-        btns.forEach(x => x.setAttribute('aria-pressed', x === b));
-        fn(b.dataset[attr]);
-      }));
-    }
-
     // 01 config flow
     const std = document.getElementById('n-std'), gen = document.getElementById('n-gen'), verdict = document.getElementById('verdict');
     function setFlow(v) {
@@ -155,8 +150,8 @@
       std.className = 'node ' + (fixed ? 'dim' : 'miss');
       gen.className = 'node ' + (fixed ? 'hit' : 'dim');
       verdict.textContent = fixed
-        ? '标准配置映射到 gen_vae，解码真正走 tiling 路径。'
-        : '配置停在通用入口，gen_vae 仍整图解码，开关被静默忽略。';
+        ? 'pipeline 初始化时把标准字段读到 gen_vae，解码真正走 tiling 路径。'
+        : '配置设在 model.vae 上，gen_vae 仍整图解码，开关被静默忽略。';
     }
     bindSeg('flow', setFlow);
     setFlow('before');
@@ -199,19 +194,21 @@
       }
     });
 
-    // 03 results (GB, from PR benchmarks)
+    // 03 results (MiB, from PR #7774 description)
     const data = {
-      tiling:  { label: 'tiling',  base: 22.1, opt: 2.7 },
-      slicing: { label: 'slicing', base: 16.6, opt: 10.1 }
+      tiling:  { label: 'tiling',  base: 22146, opt: 2748, note: '3072² 单张解码：峰值约 21.6 GiB → 2.7 GiB。代价是解码耗时 1,366 ms → 1,713 ms。' },
+      slicing: { label: 'slicing', base: 16634, opt: 10003, note: '2048² 两张一批解码。slicing 按样本逐个解码，batch = 1 时没有效果，只对批量请求有用。' },
+      e2e:     { label: 'tiling',  base: 67766, opt: 61656, note: '1536² 单张端到端，整卡峰值少 6,110 MiB。端到端延迟在几个百分点内，主要由 AR 阶段决定。' }
     };
     function setRes(k) {
-      const d = data[k], max = 22.1;
-      document.getElementById('l1').textContent = d.label;
-      document.getElementById('b0').style.width = d.base / max * 100 + '%';
-      document.getElementById('b1').style.width = d.opt / max * 100 + '%';
-      document.getElementById('v0').textContent = d.base + ' GB';
-      document.getElementById('v1').textContent = d.opt + ' GB';
-      document.getElementById('delta').textContent = `−${Math.round((1 - d.opt / d.base) * 100)}%`;
+      const d = data[k], max = Math.max(d.base, d.opt);
+      $('l1').textContent = d.label;
+      $('b0').style.width = d.base / max * 100 + '%';
+      $('b1').style.width = d.opt / max * 100 + '%';
+      $('v0').textContent = d.base.toLocaleString() + ' MiB';
+      $('v1').textContent = d.opt.toLocaleString() + ' MiB';
+      $('delta').textContent = `−${((1 - d.opt / d.base) * 100).toFixed(1)}%`;
+      $('resNote').textContent = d.note;
     }
     bindSeg('res', setRes);
     setRes('tiling');

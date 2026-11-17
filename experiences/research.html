@@ -1,1 +1,424 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ExpRL | 余奕辰</title><link rel="stylesheet" href="../assets/style.css"></head><body><div class="project-shell"><aside class="project-nav"><a href="../index.html">← overview</a><p>EXPERIENCES</p><a href="vllm-omni.html">01 vLLM-Omni</a><a href="edge-inference.html">02 Edge inference</a><a class="selected" href="research.html">03 ExpRL research</a></aside><main class="project-main"><div class="breadcrumb">~/experience / <b>exprl.md</b></div><p class="label">RESEARCH PROJECT · 2026.04 — NOW</p><h1>从探索价值，<br>到端侧的实时决策。</h1><p class="lead">基于自监督轨迹价值预训练的无人机自主探索：同时推进决策模型、Isaac Sim 规模化数据采集和 Jetson 部署性能。</p><section class="technical-note"><span>PROJECT RESULT</span><p>以 2.5D 地图生成价值热图并经 NMS 提取目标生成轨迹，覆盖率稳定 <b>92.8%</b>。</p></section><section class="note-list"><article><span>01</span><div><h3>决策建模</h3><p>地图被编码为空间 token，候选轨迹作为 query；以多层 CA/SA 融合特征和长程决策，并对历史 token 引入时间衰减以抑制重复探索。</p></div></article><article><span>02</span><div><h3>并行采集</h3><p>构建 Isaac Sim 多卡调度：16 worker × 8 env，按 GPU 轮转、故障隔离重启并支持 manifest 断点续采。累计采集 8960 条样本，相比单卡 <b>18×</b> 效率提升。</p></div></article><article><span>03</span><div><h3>端侧链路</h3><p>基于预计算 Bresenham 偏移表进行 GPU 批量栅格化，并以 TensorRT 和 CUDA Graph 捕获预处理至推理的完整链路。Jetson Orin NX Super 单决策约 <b>1.5–3 ms</b>。</p></div></article></section></main></div></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ExpRL 无人机探索 · 余奕辰</title>
+  <meta name="description" content="ExpRL：用真实物理执行结果训练候选轨迹价值网络，让无人机在未知环境里自主决定下一步飞向哪里。任务、系统架构、网络架构、开发脉络与端侧部署。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/home.css">
+  <link rel="stylesheet" href="../assets/case.css">
+  <style>
+    .diagram { width: 100%; height: auto; display: block; }
+    .scroll-diagram { overflow-x: auto; }
+    .scroll-diagram svg { min-width: 720px; }
+    .diagram text { font-family: var(--sans); fill: var(--ink); }
+    .diagram .mono { font-family: var(--mono); }
+    .diagram .sub { font-size: 10.5px; fill: var(--muted); }
+    .diagram .nd { cursor: pointer; }
+    .diagram .nd:hover rect, .diagram .nd:hover polygon { filter: brightness(.96); stroke-width: 2; }
+    .diagram .nd.sel rect, .diagram .nd.sel polygon { stroke: var(--accent); stroke-width: 2.5; }
+    .diagram .edge { fill: none; stroke: #2b333b; stroke-width: 1.4; }
+    .diagram .edge.res { stroke-dasharray: 4 3; stroke: #8a939c; }
+    .info { margin-top: 14px; padding: 14px 16px; border-left: 4px solid var(--accent); background: var(--bg); font-size: 15px; min-height: 52px; }
+    .info b { display: block; margin-bottom: 4px; }
+    .two { display: grid; grid-template-columns: minmax(0, 300px) 1fr; gap: 24px; align-items: start; }
+    .cand { font: 13px var(--mono); }
+    .cand td, .cand th { padding: 7px 6px; }
+    .cand tr.best td { background: var(--ok-bg); font-weight: 600; }
+    .phases { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+    .phases button { font: 12px var(--mono); padding: 6px 10px; border: 1px solid var(--line); background: var(--paper); border-radius: 999px; cursor: pointer; color: var(--muted); }
+    .phases button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .phase h3 { margin: 0 0 4px; font-size: 18px; }
+    .phase .when { margin: 0 0 12px; }
+    .phase dl { display: grid; grid-template-columns: 56px 1fr; gap: 6px 12px; margin: 0; font-size: 15px; }
+    .phase dt { font: 12px var(--mono); color: var(--muted); padding-top: 3px; }
+    .phase dd { margin: 0; }
+    .decay { display: flex; align-items: flex-end; gap: 3px; height: 90px; margin-top: 10px; }
+    .decay i { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; transition: height .2s; }
+    .status { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
+    .status > div { padding: 16px 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+    .status ul { margin: 8px 0 0; padding-left: 18px; font-size: 14px; color: var(--muted); }
+    @media (max-width: 760px) {
+      .two, .status { grid-template-columns: 1fr; }
+      .phase dl { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="../index.html">余奕辰</a>
+    <nav><a href="../index.html">经历</a></nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="kicker">科研项目 · EXPRL · 2026.04 — 至今</p>
+      <h1>无人机飞进陌生房间，<br>下一步该往哪飞？</h1>
+      <p class="lede">无人机带着深度相机进入完全未知的环境，一边建图一边决定下一步去哪，目标是用尽量短的航程把空间扫完，而且不撞。这个项目把“去哪”交给一个学出来的价值网络：规划器先给出几条可执行的候选路径，网络给每条打分，飞分最高的那条。网络的老师是仿真里真实飞出来的结果。</p>
+      <p class="meta">Isaac Sim 6 场景平均覆盖率 92.8% · 价值网络 489,762 参数 · 单决策 4.21 → 0.454 ms · 128 个并行环境</p>
+    </section>
+
+    <section class="step">
+      <p class="kicker">01 · 任务怎么定义</p>
+      <h2>把“无穷多个目标点”<br>变成“五条路径选一条”。</h2>
+      <p>目标点有无穷多个，没法直接学。所以每到一个决策点，规划器先在已知自由空间里用 A* 生成 5 条候选：2 条飞向已知与未知的交界（前沿），2 条朝固定方向，1 条随机。然后从同一个仿真快照出发，把 5 条逐条真实飞一遍，按回报公式打分，最高的那条就是这个状态的标签。这是监督学习，标签来自物理执行，不是人工标注。</p>
+      <p>回报 = 100 × 覆盖增益 − λ × 航程 − 6 × 碰撞 − 6 × 超时 − 0.1 × 跟踪误差。航程惩罚 λ 怎么定，直接决定网络学成什么样。切换 λ，看同一组候选的标签怎么变。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="航程惩罚">
+          <button type="button" data-lam="0.05" aria-pressed="true">λ = 0.05（最初）</button>
+          <button type="button" data-lam="0.015" aria-pressed="false">λ = 0.015（重塑后）</button>
+        </div>
+        <div class="two">
+          <svg class="diagram" id="candMap" viewBox="0 0 300 300" role="img" aria-label="一个决策点的 5 条候选路径示意"></svg>
+          <div class="scroll">
+            <table class="cand"><thead><tr><th>候选</th><th>来源</th><th>覆盖增益</th><th>航程</th><th>回报</th></tr></thead><tbody id="candBody"></tbody></table>
+            <p class="verdict" id="candVerdict"></p>
+          </div>
+        </div>
+        <p class="caption">这 5 条候选的数值是示意。真实结果：λ 从 0.05 降到 0.015 后，27% 的训练标签翻转，而且全部翻向更长的路径；困难场景闭环覆盖率 40.47% → 66.45%。不需要重新采集，因为每个样本存的是回报分量，标量回报可以离线重算。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">02 · 系统架构</p>
+      <h2>离线采集出标签，训练出网络，<br>机载闭环里只做一次前向。</h2>
+      <p>整个系统分三条线。采集线在 Isaac Sim 里把每个决策的 5 条候选都真飞一遍，这是项目里最贵的部分，平均约 6 分钟一个决策，所以铺到多卡上并行。训练线把样本审计、补历史、预渲染后训练价值网络。部署线在机上闭环运行：5 次物理执行被压成 1 次网络推理。点击任意模块看说明。</p>
+      <div class="panel">
+        <div class="scroll-diagram"><svg class="diagram" id="sysDiagram" viewBox="0 0 1000 480" role="img" aria-label="系统架构图：采集、训练、部署三条线"></svg></div>
+        <div class="info" id="sysInfo"><b>点击图中的模块</b>查看它做什么。</div>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">03 · 网络架构</p>
+      <h2>地图切成空间 token，<br>每条候选路径去“查询”它们。</h2>
+      <p>价值网络 <code>MapTrajectoryAttentionValueNet</code> 有四路输入。地图经卷积压成 10×10 = 100 个空间 token；过去 16 步的决策摘要编码成 16 个历史 token，按年龄乘可学习的衰减，拼在地图 token 后面。每条候选路径被画成 3 通道图，编码成一个 query，再加上路径终点的位置。两层交叉注意力里，query 对这 116 个 token 做注意力，最后加入航程、净空、信息增益等标量，输出一个分数。数据流从下往上，点击模块看张量形状和设计理由。</p>
+      <div class="panel">
+        <svg class="diagram" id="netDiagram" viewBox="0 0 760 940" role="img" aria-label="价值网络架构图"></svg>
+        <div class="info" id="netInfo"><b>点击图中的模块</b>查看张量形状和设计理由。</div>
+      </div>
+      <div class="panel">
+        <p style="margin:0 0 6px"><b>历史记忆的可学习衰减</b></p>
+        <p style="margin:0;color:var(--muted);font-size:15px">第 t 个历史 token 乘 exp(−λ·age)，λ 本身是参数。固定 16 步窗口时，历史在一个场景 +15.3pp、另一个场景 −38.2pp，是零和交易；让网络自己学窗口长度后打破了零和，这是 8 次以上结构尝试里唯一晋升的改动。拖动半衰期看 16 个历史 token 的权重。</p>
+        <div class="slider" style="display:flex;align-items:center;gap:12px;font:13px var(--mono);color:var(--muted);margin-top:14px">
+          <span>半衰期</span><input type="range" id="half" min="1" max="16" step="0.1" value="4.1" style="flex:1;max-width:360px;accent-color:var(--accent)" aria-label="半衰期（决策数）"><b id="halfV"></b>
+        </div>
+        <div class="decay" id="decay" aria-hidden="true"></div>
+        <p class="caption">左边最旧（age 15），右边最新（age 0）。初始半衰期 4，训练收敛到 4.1。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">04 · 项目脉络</p>
+      <h2>每一步都在回答：<br>瓶颈到底在哪？</h2>
+      <p>项目从真机转到仿真，再从“堆数据”转到“改目标”和“改外层规则”，后来又扩展到另一个仿真平台、端侧部署和三维栈。点击阶段查看当时的问题、做法和结果。</p>
+      <div class="panel">
+        <div class="phases" id="phaseBtns" role="group" aria-label="阶段"></div>
+        <div class="phase" id="phase"></div>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">05 · 采集与端侧</p>
+      <h2>采集慢在物理执行，<br>推理慢在算子启动。</h2>
+      <p>采集方面，一个决策要把 5 条候选都真飞一遍，平均约 6 分钟。我搭了三层多卡框架：调度器按 GPU 轮转分配 worker，监督进程靠心跳检测卡死并重启，采集器以 manifest 断点续采，样本先写临时文件再原子改名。推理方面，网络只有 49 万参数，瓶颈是每次决策要启动一大串小算子，所以没有走量化，而是把栅格化搬到 GPU、换成 TensorRT，再把整条链路录成一张 CUDA Graph。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="指标">
+          <button type="button" data-perf="edge" aria-pressed="true">单决策推理延迟</button>
+          <button type="button" data-perf="collect" aria-pressed="false">多卡采集</button>
+        </div>
+        <div class="bars" id="perfBars"></div>
+        <p class="delta" id="perfDelta"></p>
+        <p class="verdict" id="perfNote"></p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">06 · 还没解决的问题</p>
+      <h2>只看一步收益，<br>会把后面的路线带差。</h2>
+      <p>把模型换到另一个开源探索仿真平台 FUEL 上，它会在两个位置之间来回飞，20 个决策后半边场地扫满、另半边没去。两个朴素的贪心规则都能打断这个循环，模型不能，说明问题在模型本身。一个方向是把标签从“一步收益”改成“三步链式收益”：链式标签与一步标签选同一条候选的比例只有 40%，链式选中的第一段中位数短 5.07 米，前沿类候选占比从 89% 降到 56%。转到新的三维栈后，同样的短视在实测里也出现了：</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="评价时域">
+          <button type="button" data-hz="one" aria-pressed="true">只看这一步</button>
+          <button type="button" data-hz="multi" aria-pressed="false">看后续 30 秒</button>
+        </div>
+        <div class="bars" id="hzBars"></div>
+        <p class="verdict" id="hzVerdict"></p>
+        <p class="caption">同一中途快照、同一批候选，分别执行后用固定规则续飞 30 秒，两次重复结果一致。</p>
+      </div>
+      <p style="margin-top:28px">另一个方向是加入视觉语言模型 (VLM)，详见 <a href="exprl-vlm.html">VLM 版本子页</a>：每轮探索结束后，Qwen3-VL-2B 看 RGB 关键帧、覆盖地图和探索历史，输出按区域对齐的偏好向量，选轨模块把它和几何排序融合。4 个布局、8 个任务的仿真对照里，VLM 组目标区新增覆盖 26.15 m³，几何组 22.28 m³；Jetson 上单轮 P95 3.36 s，适合放在轮间决策。但接到训练好的规划器后，收益在两个场景一升一降，根子还是上面的短视。</p>
+      <div class="status">
+        <div>
+          <span class="pill ok">已验证</span>
+          <ul>
+            <li>价值网络 + 外层规则：Isaac Sim 6 场景平均覆盖率 92.8%。</li>
+            <li>多卡采集：128 个并行环境，8960 条链式样本，0 条审计剔除。</li>
+            <li>端侧管线：9.3× 加速，863 个闭环决策选择零失配。</li>
+          </ul>
+        </div>
+        <div>
+          <span class="pill warn">进行中</span>
+          <ul>
+            <li>FUEL 上的来回飞问题，链式标签训练的模型待判决。</li>
+            <li>三维栈上比较“一步 + 历史”“多步无历史”“多步 + 历史”。</li>
+            <li>多步排序在留出场景通过后，再测 VLM 偏好的独立贡献。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="contact">
+      <a class="back" href="../index.html">← 返回经历</a>
+      <a class="back" href="exprl-vlm.html">VLM 版本 →</a>
+    </section>
+  </main>
+
+  <footer>© 2026 余奕辰</footer>
+
+  <script src="../assets/case.js"></script>
+  <script>
+    const NS = 'http://www.w3.org/2000/svg';
+    const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+    // ---------- shared SVG builder ----------
+    const FILL = {
+      input: ['#ece0f2', '#8a6aa5'], conv: ['#fbe3e3', '#c98a8a'], lin: ['#e4e3f4', '#6f6fa0'],
+      token: ['#e7efe1', '#7c9a6c'], decay: ['#fbe1c4', '#c08a4a'], norm: ['#fbe1c4', '#c08a4a'],
+      attn: ['#f7f3d5', '#a39a5a'], kv: ['#e7efe1', '#7c9a6c'], query: ['#dfe9f8', '#5b7fbf'],
+      out: ['#dff0e8', '#0f7b5a'], loss: ['#ffffff', '#9aa3ab'], lane: ['#ffffff', '#c9cfd6'],
+      ext: ['#fbf0dc', '#9a5a00'], graph: ['none', '#2456c9']
+    };
+    function nodeSvg(n) {
+      const [f, s] = FILL[n.c];
+      const cx = n.x + n.w / 2, cy = n.y + n.h / 2;
+      let shape;
+      if (n.trap) {
+        const d = Math.min(14, n.w * .1);
+        shape = `<polygon points="${n.x},${n.y + n.h} ${n.x + n.w},${n.y + n.h} ${n.x + n.w - d},${n.y} ${n.x + d},${n.y}" fill="${f}" stroke="${s}" stroke-width="1.3"/>`;
+      } else {
+        shape = `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="${n.r ?? 6}" fill="${f}" stroke="${s}" stroke-width="1.3"${n.dash ? ' stroke-dasharray="5 4"' : ''}/>`;
+      }
+      const ty = n.sub ? cy - 3 : cy + 4.5;
+      const fs = n.fs || 13;
+      let t = `<text x="${cx}" y="${ty}" text-anchor="middle" font-size="${fs}" font-weight="${n.bold ? 600 : 500}">${esc(n.t)}</text>`;
+      if (n.sub) t += `<text class="sub mono" x="${cx}" y="${cy + 12}" text-anchor="middle">${esc(n.sub)}</text>`;
+      return `<g class="nd" data-id="${n.id}" tabindex="0" role="button" aria-label="${esc(n.t)}">${shape}${t}</g>`;
+    }
+    function edgeSvg(pts, res) {
+      return `<polyline class="edge${res ? ' res' : ''}" points="${pts.map(p => p.join(',')).join(' ')}" marker-end="url(#ah)"/>`;
+    }
+    const MARKER = `<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2b333b"/></marker></defs>`;
+    function wire(svgId, infoId, nodes) {
+      const svg = $(svgId), info = $(infoId);
+      const pick = g => {
+        svg.querySelectorAll('.nd').forEach(x => x.classList.toggle('sel', x === g));
+        const n = nodes.find(x => x.id === g.dataset.id);
+        info.innerHTML = `<b>${esc(n.t)}${n.sub ? ' · ' + esc(n.sub) : ''}</b>${n.info}`;
+      };
+      svg.querySelectorAll('.nd').forEach(g => {
+        g.addEventListener('click', () => pick(g));
+        g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(g); } });
+      });
+    }
+
+    // ---------- 01 candidate decision ----------
+    const CANDS = [
+      { id: 'c1', src: '前沿', col: '#0f7b5a', gain: 0.036, len: 20, pts: [[150, 175], [120, 120], [90, 70], [55, 35]] },
+      { id: 'c2', src: '前沿', col: '#0f7b5a', gain: 0.030, len: 6, pts: [[150, 175], [185, 135], [210, 100]] },
+      { id: 'c3', src: '定向', col: '#2456c9', gain: 0.022, len: 5, pts: [[150, 175], [195, 190], [235, 200]] },
+      { id: 'c4', src: '定向', col: '#2456c9', gain: 0.015, len: 4, pts: [[150, 175], [125, 210], [105, 235]] },
+      { id: 'c5', src: '随机', col: '#5d6670', gain: 0.010, len: 7, pts: [[150, 175], [105, 170], [60, 158]] }
+    ];
+    function setLam(v) {
+      const lam = +v;
+      const rows = CANDS.map(c => ({ ...c, ret: 100 * c.gain - lam * c.len }));
+      const best = rows.reduce((a, b) => (b.ret > a.ret ? b : a));
+      let s = `<rect x="0" y="0" width="300" height="300" fill="#eef1f4"/>`;
+      s += `<path d="M0,0 H300 V85 Q200,70 150,110 Q90,140 0,120 Z" fill="#d7dce2"/>`;
+      s += `<text x="10" y="18" font-size="11" fill="#5d6670">未知区域</text>`;
+      [[70, 150, 22, 60], [200, 215, 60, 20], [230, 120, 18, 40]].forEach(([x, y, w, h]) => { s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#1d232a" rx="2"/>`; });
+      rows.forEach(c => {
+        const on = c === best;
+        s += `<polyline points="${c.pts.map(p => p.join(',')).join(' ')}" fill="none" stroke="${c.col}" stroke-width="${on ? 4.5 : 2}" stroke-opacity="${on ? 1 : .55}" stroke-linecap="round" stroke-linejoin="round"${c.src === '随机' ? ' stroke-dasharray="5 4"' : ''}/>`;
+        const [ex, ey] = c.pts[c.pts.length - 1];
+        s += `<circle cx="${ex}" cy="${ey}" r="${on ? 9 : 7}" fill="${c.col}"/><text x="${ex}" y="${ey + 3.5}" font-size="9" text-anchor="middle" fill="#fff" font-family="IBM Plex Mono">${c.id}</text>`;
+      });
+      s += `<circle cx="150" cy="175" r="7" fill="#fff" stroke="#1d232a" stroke-width="2"/>`;
+      $('candMap').innerHTML = s;
+      $('candBody').innerHTML = rows.map(c => `<tr class="${c === best ? 'best' : ''}"><td>${c.id}</td><td>${c.src}</td><td>${(c.gain * 100).toFixed(1)}%</td><td>${c.len} m</td><td>${c.ret.toFixed(2)}</td></tr>`).join('');
+      $('candVerdict').innerHTML = lam === 0.05
+        ? '<span class="pill mute">标签 c2</span> 惩罚太重，20 米的长距离前沿穿越被扣 1.0 分，网络学会只挑近处。模型在 42% 覆盖率附近卡死。'
+        : '<span class="pill ok">标签 c1</span> 惩罚降到 0.015，远处更大的未知区域重新有竞争力，标签翻向更长的路径。';
+    }
+    bindSeg('lam', setLam);
+    setLam('0.05');
+
+    // ---------- 02 system diagram ----------
+    const SYS = [
+      { id: 'fleet', c: 'lin', x: 150, y: 22, w: 820, h: 30, t: '多卡调度：调度器 → 监督进程（心跳 / 重启）→ 采集器 · 16 worker × 8 env = 128 个并行环境', fs: 12,
+        info: '三层结构。调度器按 GPU 轮转分配 worker 和种子后退出；每个 worker 一个监督进程，30 秒查一次心跳，停滞 1200 秒判定卡死，先按 PID 杀单个再收尾整个进程组，最多重启 200 次；启动前逐卡等空闲显存 ≥ 8000 MiB。采集器以 manifest.jsonl 为准断点续采，一次崩溃最多损失一个进行中的 episode。四卡 RTX PRO 6000 上用 16 worker × 8 env 采了 8960 条链式样本，0 条审计剔除。' },
+      { id: 'a1', c: 'input', x: 150, y: 70, w: 120, h: 54, t: '场景生成', sub: '40×40 m · 随机障碍', info: '程序化生成 40m × 40m × 4.5m 场地，默认 10 个障碍物。场景种子按尝试序号推导，保证续采时场景不重复。' },
+      { id: 'a2', c: 'conv', x: 290, y: 70, w: 120, h: 54, t: '建图', sub: 'D435i 深度 → 栅格', info: '模拟 RealSense D435i（最大测距 5 m）。深度帧直接进自研的 C++ 共享库 libego_gridmap.so：0.2 m 占据栅格 + A* 规划，不依赖 ROS，整条链路在一个进程里跑完，多卡并行时没有端口竞争。' },
+      { id: 'a3', c: 'query', x: 430, y: 70, w: 120, h: 54, t: '候选生成', sub: '2前沿·2定向·1随机', info: 'A* 在已知自由空间里规划 5 条候选，每条 8 个路点。固定来源配比是为了不让网络投机某一类候选。约束：位移 ≥ 0.5 m、去重距离 0.6 m、最低飞行高度 1.2 m。' },
+      { id: 'a4', c: 'attn', x: 570, y: 70, w: 120, h: 54, t: '物理执行 × 5', sub: '同一快照逐条恢复', info: '冻结无人机位姿和已知地图作为快照，5 条候选逐条从同一快照恢复后真飞一遍。这是“比较公平”的基础，有一整套审计（回报重放、碰撞来源分离等），历史上 3631/3631 全部通过。' },
+      { id: 'a5', c: 'decay', x: 710, y: 70, w: 120, h: 54, t: '回报与标签', sub: '分量 → oracle', info: '每条候选存 6 个物理分量：覆盖增益、航程、碰撞、超时、跟踪误差、来源。标量回报由分量推导，所以改回报公式不用重新采集。回报最高的候选编号就是 oracle 标签。' },
+      { id: 'a6', c: 'out', x: 850, y: 70, w: 120, h: 54, t: '样本落盘', sub: 'episode 结束才写', info: '一个 episode 最多 70 个决策，覆盖率达到 0.95 或停滞时结束；只有撞墙撞地算失败。落盘前要过合格线（决策数 ≥ 5、覆盖率单调），先写 .tmp 再原子改名，杜绝半截文件。' },
+      { id: 'b1', c: 'lin', x: 850, y: 205, w: 120, h: 54, t: '聚合 + 审计', sub: '按场景切分', info: '合并各 worker 的样本，按（场景、回合、决策序号）去重；按场景种子切分训练和验证集，防止同一场景泄漏到两边；逐条跑严格审计，有一条不过就报错退出。' },
+      { id: 'b2', c: 'token', x: 710, y: 205, w: 120, h: 54, t: '回填历史', sub: '16 步 × 8 维', info: '给每个样本构造“过去 16 步”的决策摘要：落点相对位移、来源、这一步的回报、覆盖增量、是否重访。训练集和历史张量必须由同一次调用产出，否则行会错位。' },
+      { id: 'b3', c: 'conv', x: 570, y: 205, w: 120, h: 54, t: '预渲染', sub: '约 10× 加速', info: '把地图和候选路径提前栅格化成固定尺寸张量存盘，训练时直接读，省掉每个 epoch 重复渲染。' },
+      { id: 'b4', c: 'attn', x: 430, y: 205, w: 120, h: 54, t: '训练价值网络', sub: 'CE + MSE + Pairwise', info: '交叉熵教“谁最好”，均方误差教“好多少”，成对排序教“两两次序”。冠军配方：120 epoch、batch 256、余弦学习率、混合精度，单张 4090 约 7 分钟。' },
+      { id: 'c1', c: 'conv', x: 150, y: 330, w: 120, h: 54, t: '深度 → 地图', sub: '机载建图', info: '部署时只有一条真实轨迹：每次决策基于当前地图做选择，执行后的新观测更新地图，进入下一次决策。' },
+      { id: 'c2', c: 'query', x: 290, y: 330, w: 120, h: 54, t: '候选生成', sub: '5 条', info: '与采集时同一个候选生成器。' },
+      { id: 'c3', c: 'conv', x: 430, y: 330, w: 120, h: 54, t: 'GPU 栅格化', sub: '与训练逐位一致', info: '原来 CPU 上逐像素画路径（Bresenham 画线占 2.11 ms，是大头）。改写成 GPU kernel，用预计算的偏移表，输出与训练路径逐位一致；CUDA Graph 不能有同步和变长掩码，所以改成固定形状路由 + index_put_。' },
+      { id: 'c4', c: 'attn', x: 570, y: 330, w: 120, h: 54, t: 'TensorRT 打分', sub: 'FP32 引擎', info: 'ONNX（全静态形状）→ TensorRT FP32 引擎。FP16 反而更慢（0.153 vs 0.141 ms），因为这个模型的瓶颈在算子启动而不在算力。' },
+      { id: 'c5', c: 'ext', x: 710, y: 330, w: 120, h: 54, t: 'argmax + 外层规则', sub: '不改权重', info: '三条外层规则补模型的短板：超时时回滚并把端点拉黑；连续两次选中同一个低收益前沿簇则冷却 8 个决策；回滚后在剩余候选里同槽重试。最低场景从 18.2% 拉到 93.5% 的那一步，靠的是超时恢复而不是换模型。' },
+      { id: 'c6', c: 'out', x: 850, y: 330, w: 120, h: 54, t: '执行轨迹', sub: '采集新观测', info: '飞完选中的路径，新的深度帧进入建图，回到下一次决策。' },
+      { id: 'gr', c: 'graph', x: 420, y: 318, w: 280, h: 82, t: '', dash: true, info: '“上传输入 + 栅格化 + 推理 + 取输出”整条录进一张 CUDA Graph，之后每次决策 = 一次上传 + 一次 replay。RTX 4090 上 4.21 ms → 0.454 ms；6 个场景 863 个闭环决策，选择零失配，覆盖率与 PyTorch 版本逐位相同。' }
+    ];
+    (function drawSys() {
+      let s = MARKER;
+      [[0, 10, 170, '① 采集 · Isaac Sim'], [0, 185, 90, '② 训练'], [0, 290, 180, '③ 机载闭环']].forEach(([x, y, h, t]) => {
+        s += `<rect x="4" y="${y}" width="992" height="${h}" rx="8" fill="#f6f6f2" stroke="#e3e3dc"/><text x="18" y="${y + 24}" font-size="13" font-weight="600">${t}</text>`;
+      });
+      const order = ['gr', ...SYS.map(n => n.id).filter(i => i !== 'gr')];
+      order.forEach(id => { s += nodeSvg(SYS.find(n => n.id === id)); });
+      const E = [
+        [[270, 97], [290, 97]], [[410, 97], [430, 97]], [[550, 97], [570, 97]], [[690, 97], [710, 97]], [[830, 97], [850, 97]],
+        [[910, 124], [910, 205]], [[850, 232], [830, 232]], [[710, 232], [690, 232]], [[570, 232], [550, 232]],
+        [[270, 357], [290, 357]], [[410, 357], [430, 357]], [[550, 357], [570, 357]], [[690, 357], [710, 357]], [[830, 357], [850, 357]],
+        [[910, 384], [910, 440], [210, 440], [210, 384]]
+      ];
+      E.forEach(p => { s += edgeSvg(p); });
+      s += edgeSvg([[490, 259], [490, 300], [630, 300], [630, 330]], true);
+      s += `<text x="500" y="295" font-size="11" fill="#5d6670" font-family="IBM Plex Mono">checkpoint → ONNX → TRT 引擎</text>`;
+      s += `<text x="560" y="414" font-size="11" fill="#2456c9" text-anchor="middle" font-family="IBM Plex Mono">一张 CUDA Graph</text>`;
+      s += `<text x="560" y="456" font-size="11" fill="#5d6670" text-anchor="middle">新观测 → 下一次决策</text>`;
+      s += `<text x="160" y="160" font-size="11" fill="#5d6670">平均约 6 分钟 / 决策：每个决策要把 5 条候选都真飞一遍</text>`;
+      $('sysDiagram').innerHTML = s;
+      wire('sysDiagram', 'sysInfo', SYS);
+    })();
+
+    // ---------- 03 network diagram ----------
+    const NET = [
+      { id: 'im', c: 'input', x: 40, y: 880, w: 170, h: 40, t: '地图', sub: '4 × 80 × 80', info: '4 个通道：自由、占据、未知、前沿掩码。80×80 格对应 40m × 40m，每格 0.5 m。这是 XY 平面投影，高度方向被压掉；家具场景（71.4%）明显差于柱状障碍场景（93.5%），这是可能原因之一。' },
+      { id: 'ih', c: 'input', x: 230, y: 880, w: 150, h: 40, t: '决策历史', sub: '16 × 8', info: '过去 16 步，每步 8 维：落点相对当前位置的 (x, y)、候选来源 one-hot、这一步的回报、覆盖增量、是否重访（2 m 内到过）。' },
+      { id: 'it', c: 'input', x: 400, y: 880, w: 160, h: 40, t: '候选路径', sub: 'K × 3 × 80 × 80', info: 'K = 5 条候选，每条 8 个路点，不以坐标喂入，而是先画成 3 通道图：路径连线、终点高斯斑、起点标记。网络看到的是路径的形状。' },
+      { id: 'is', c: 'input', x: 630, y: 880, w: 110, h: 40, t: '候选标量', sub: 'K × 6', info: '航程（÷10 m）、最小净空（÷2 m）、信息增益（÷10），加 3 维来源 one-hot。' },
+
+      { id: 'm1', c: 'conv', x: 55, y: 815, w: 140, h: 30, t: 'Conv 4→32, s2', fs: 12, info: '3×3 卷积，步长 2，80×80 → 40×40。' },
+      { id: 'm2', c: 'conv', x: 55, y: 770, w: 140, h: 30, t: 'Conv 32→64, s2', fs: 12, info: '40×40 → 20×20。' },
+      { id: 'm3', c: 'conv', x: 55, y: 725, w: 140, h: 30, t: 'Conv 64→128, s2', fs: 12, info: '20×20 → 10×10，每个位置 128 维。' },
+      { id: 'mt', c: 'token', x: 55, y: 670, w: 140, h: 34, t: '100 个空间 token', sub: '+ 网格位置编码', fs: 12, info: '10×10 摊平成 100 个 token，每个负责 2m × 2m 的一块。网格坐标归一化到 [−1, 1] 后经 Linear(2→128) 加上，网络才知道每个 token 在地图的哪里。' },
+
+      { id: 'h1', c: 'lin', trap: true, x: 245, y: 815, w: 120, h: 30, t: 'Linear 8→128', fs: 12, info: '两层 MLP 把 8 维摘要投影到和地图 token 同一个 128 维空间，中间 ReLU。' },
+      { id: 'h2', c: 'lin', trap: true, x: 245, y: 770, w: 120, h: 30, t: 'Linear 128→128', fs: 12, info: '投影第二层。' },
+      { id: 'hd', c: 'decay', x: 245, y: 720, w: 120, h: 34, t: '× exp(−λ·age)', sub: 'λ 可学习', fs: 12, info: 'age = 15 − t，最新一步 age 为 0。λ 是一个可学习标量，初始对应半衰期 4 个决策，训练收敛到 4.1。软窗口让网络按需决定看多远的过去。下方面板可以拖动试试。' },
+      { id: 'ht', c: 'token', x: 245, y: 670, w: 120, h: 34, t: '16 个历史 token', sub: '+ 位置嵌入', fs: 12, info: '加可学习位置嵌入后拼在 100 个地图 token 后面，候选 query 在每一层都能看到整段探索历史。' },
+      { id: 'kv', c: 'kv', x: 55, y: 600, w: 310, h: 34, t: 'Key / Value：116 个 token', info: '100 个地图 token + 16 个历史 token。候选 query 对它们做注意力，同时“看地图”和“看自己刚才做了什么”。' },
+
+      { id: 't1', c: 'conv', x: 415, y: 815, w: 120, h: 30, t: 'Conv 3→32 + Pool', fs: 11.5, info: '每条候选当成独立的图过同一个小卷积塔（批维和候选维合并），2×2 池化。' },
+      { id: 't2', c: 'conv', x: 415, y: 770, w: 120, h: 30, t: 'Conv 32→64 + Pool', fs: 11.5, info: '第二层卷积 + 2×2 池化。' },
+      { id: 't3', c: 'conv', x: 415, y: 725, w: 120, h: 30, t: 'Conv 64→128 + GAP', fs: 11.5, info: '全局平均池化，每条候选得到一个 128 维向量。' },
+      { id: 'ta', c: 'lin', x: 545, y: 670, w: 150, h: 40, t: '终点质心', sub: 'Linear 2→128', fs: 12, info: '取终点高斯斑的加权质心，投影到 128 维加进 query。全局平均池化会抹掉“这条路飞到哪里”，这个空间锚点把它补回来。' },
+      { id: 'q', c: 'query', x: 415, y: 615, w: 120, h: 34, t: 'Query', sub: 'K × 128', fs: 12, info: '每条候选一个 query 向量。' },
+
+      { id: 'at', c: 'attn', x: 55, y: 520, w: 560, h: 46, t: 'Multi-Head Cross-Attention（4 头）', bold: true, info: 'Q 来自候选，K/V 来自 116 个 token：每条候选在问“沿着我飞，地图上哪些区域和历史与我相关”。只有交叉注意力，候选之间不互相注意，每条候选独立打分。d_model 128，dropout 0.1。' },
+      { id: 'n1', c: 'norm', x: 55, y: 470, w: 560, h: 30, t: 'Add & LayerNorm', fs: 12, info: '残差连接 + LayerNorm。' },
+      { id: 'ff', c: 'lin', trap: true, x: 225, y: 415, w: 220, h: 36, t: 'FFN 128 → 256 → 128', fs: 12, info: '前馈网络，中间 ReLU 和 dropout。' },
+      { id: 'n2', c: 'norm', x: 55, y: 360, w: 560, h: 30, t: 'Add & LayerNorm', fs: 12, info: '残差连接 + LayerNorm。整个块重复 2 层。' },
+
+      { id: 'sl', c: 'lin', trap: true, x: 648, y: 400, w: 104, h: 36, t: 'Linear 6→128', fs: 11.5, info: '标量在注意力之后才加进 query。航程、信息增益这类全局属性不该干扰“这条路径应该关注地图哪里”的空间查询，所以刻意后注入。' },
+      { id: 'hh1', c: 'lin', trap: true, x: 225, y: 200, w: 220, h: 34, t: 'Linear 128→128 · ReLU', fs: 12, info: '打分头第一层。也实现过混合专家（MoE）打分头，在这个数据规模上被否掉，保持单头。' },
+      { id: 'hh2', c: 'lin', trap: true, x: 260, y: 150, w: 150, h: 34, t: 'Linear 128→1', fs: 12, info: '每条候选输出一个标量，语义是归一化后的回报。' },
+      { id: 'mk', c: 'norm', x: 205, y: 95, w: 260, h: 34, t: '屏蔽无效候选 → 分数 K', fs: 12, info: '候选数不足时用掩码把无效位置填成极小值（FP16 下用 −65500，避免溢出）。' },
+      { id: 'ou', c: 'out', x: 235, y: 40, w: 200, h: 34, t: 'argmax → 执行的候选', fs: 12, bold: true, info: '取分数最高的候选飞过去。部署时再经过外层规则（超时回滚、前沿冷却、同槽重试）。' },
+      { id: 'ls', c: 'loss', x: 490, y: 30, w: 260, h: 64, t: '训练目标', sub: 'CE + 0.5·MSE + 0.5·Pairwise', fs: 13, info: '交叉熵：分对“谁回报最高”；MSE：回归归一化回报；成对排序：任意一对候选，回报高的分数也要高。用射线估计的代理标签实测 100% 偏乐观，所以只给 0.1 的权重，且不参与交叉熵。' }
+    ];
+    (function drawNet() {
+      let s = MARKER;
+      s += `<rect x="30" y="345" width="600" height="235" rx="12" fill="none" stroke="#7d8b98" stroke-dasharray="6 5"/>`;
+      s += `<text x="628" y="339" text-anchor="end" font-size="12" font-weight="600" fill="#5d6670">× 2 层</text>`;
+      NET.forEach(n => { s += nodeSvg(n); });
+      const up = (x, y1, y2) => edgeSvg([[x, y1], [x, y2]]);
+      [[125, 880, 845], [125, 815, 800], [125, 770, 755], [125, 725, 704], [125, 670, 634],
+       [305, 880, 845], [305, 815, 800], [305, 770, 754], [305, 720, 704], [305, 670, 634],
+       [475, 880, 845], [475, 815, 800], [475, 770, 755], [475, 725, 698], [475, 682, 649],
+       [210, 600, 566], [475, 615, 566], [335, 520, 500], [335, 470, 451], [335, 415, 390], [335, 360, 283],
+       [335, 267, 234], [335, 200, 184], [335, 150, 129], [335, 95, 74]].forEach(([x, a, b]) => { s += up(x, a, b); });
+      s += edgeSvg([[550, 880], [550, 760], [620, 760], [620, 710]]);
+      s += edgeSvg([[545, 690], [483, 690]]);
+      s += edgeSvg([[700, 880], [700, 436]]);
+      s += edgeSvg([[700, 400], [700, 275], [343, 275]]);
+      s += edgeSvg([[535, 632], [622, 632], [622, 485], [615, 485]], true);
+      s += edgeSvg([[55, 485], [42, 485], [42, 375], [55, 375]], true);
+      [[475, 690], [335, 275]].forEach(([x, y]) => {
+        s += `<circle cx="${x}" cy="${y}" r="8" fill="#fff" stroke="#2b333b" stroke-width="1.4"/><text x="${x}" y="${y + 4.5}" text-anchor="middle" font-size="13">+</text>`;
+      });
+      s += `<text x="218" y="590" font-size="13" font-style="italic">K, V</text><text x="483" y="590" font-size="13" font-style="italic">Q</text>`;
+      s += `<text x="628" y="508" font-size="10.5" fill="#8a939c">残差</text>`;
+      $('netDiagram').innerHTML = s;
+      wire('netDiagram', 'netInfo', NET);
+    })();
+
+    // decay slider
+    const dec = $('decay'), dbars = Array.from({ length: 16 }, () => dec.appendChild(document.createElement('i')));
+    function setHalf() {
+      const h = +$('half').value, lam = Math.LN2 / h;
+      $('halfV').textContent = h.toFixed(1) + ' 步';
+      dbars.forEach((b, t) => { b.style.height = Math.exp(-lam * (15 - t)) * 100 + '%'; });
+    }
+    $('half').addEventListener('input', setHalf);
+    setHalf();
+
+    // ---------- 04 phases ----------
+    const PH = [
+      ['真机 → 仿真', '07.25 – 07.31', '真机闭环采集里，9/11 的失败案例都是规划器给的终点不对。', '查到 EGO 规划器源码把终点高度硬编码成 1.0 m，修复后反汇编二进制确认生效。真机每轮实验都要真飞、依赖 ROS，周期太长，于是转向 Isaac Sim + 自研栅格地图 / A*，零 ROS 依赖。', '调试速度快一个数量级，标签仍然来自物理执行。'],
+      ['打地基', '07.31 – 08.14', '离线准确率上不去，不知道瓶颈在模型、数据还是训练。', '做消融：训练配方（batch 256 + 混合精度）、多加 1176 条数据、模型放大 2.5 倍。', '配方 +12.9pp，数据 +15.1pp，放大模型 −0.9pp。瓶颈是配方和数据，此后模型规模一直保持 d128 / 4 头 / 2 层。'],
+      ['DAgger', '08.15 – 08.20', '数据只来自最优策略走过的状态，模型自己走错之后的状态没见过（分布偏移）。', '让模型自己推进采集，标签仍按真飞结果记。', '131 条定向样本带来 +4.6pp；但有一轮 1282 条新数据全部有害，总结出三条规范：场景域要一致、来源比例要自然、失败密度过高的状态没有教学价值。'],
+      ['闭环真相', '08.19 – 08.25', '离线准确率 54% 的模型，到底能扫多少？', '把模型放进闭环推进 episode。', '中位数只有 14–18% 覆盖率，最好的一次 43%。从此确立：离线准确率只是必要条件，闭环能力必须单独测。'],
+      ['改目标而不是改数据', '08.26 – 08.27', '模型在 42% 覆盖率附近卡死。', '路线 A：去卡住的覆盖区间定向采集 293 条，闭环 −17.1pp。路线 B：只把航程惩罚从 0.05 降到 0.015，离线重算标签，不采任何新数据。', '27% 标签翻转且全部指向更长路径，困难场景 40.47% → 66.45%。'],
+      ['稳定化', '08.28 – 09.16', '少数场景的覆盖率始终上不去。', '超时恢复（回滚 + 拉黑端点）；前沿冷却（连续两次低收益的“幻影前沿”冷却 8 步）；决策历史 + 可学习衰减；同槽重试。集成、终局补数据、强化学习微调都试过，全部证伪。', '6 场景平均覆盖率 92.8%（从起点算增益 91.2%）。一个弱场景 18.2% → 93.5%，靠的是系统可靠性而不是换模型。'],
+      ['FUEL 平台 + 端侧', '09.17 – 09.30', '自己的仿真里表现好，换个平台还行吗？推理能不能上机？', '把开源探索系统 FUEL 的场景重建进 Isaac（IoU 1.000），统一两边的覆盖率口径，修了 FUEL 的三个上游 bug；同时做 GPU 栅格化 + TensorRT + CUDA Graph。', '同一张地图的中央区域：FUEL 自带算法 86.67%，我们 99.79%。但在 FUEL 自己的仿真里，模型出现来回飞的循环。推理 4.21 → 0.454 ms，选择零失配。'],
+      ['链式标签', '10.01 – 10.18', '来回飞说明模型只看一步收益。', '标签从一步收益改成三步链式收益；在四卡机上用 128 个并行环境采集。', '8960 条样本，0 条审计剔除。链式与一步标签选择一致率仅 40%，链式选中的第一段短 5.07 m。'],
+      ['三维栈 + VLM', '10.19 – 至今', '二维投影丢了高度；“扫哪里”缺少语义。', '转到三维体素栈；接入 Qwen3-VL-2B 输出区域偏好向量，融合进选轨；测量同一状态下一步与多步收益的排序。', 'VLM 能改变实际路线，但收益不稳定；短视在新栈上同样存在，下一步先做多步价值。']
+    ];
+    $('phaseBtns').innerHTML = PH.map((p, i) => `<button type="button" data-ph="${i}" aria-pressed="${i === 0}">${i + 1} · ${p[0]}</button>`).join('');
+    function setPh(i) {
+      const [t, w, prob, act, res] = PH[i];
+      $('phase').innerHTML = `<h3>${t}</h3><p class="when">2026.${w}</p><dl><dt>问题</dt><dd>${prob}</dd><dt>做法</dt><dd>${act}</dd><dt>结果</dt><dd>${res}</dd></dl>`;
+    }
+    bindSeg('ph', v => setPh(+v));
+    setPh(0);
+
+    // ---------- 05 perf ----------
+    const PERF = {
+      edge: { rows: [['CPU 栅格化 + PyTorch', 4.21, '4.21 ms', ''], ['GPU 栅格化 + PyTorch', 2.11, '2.11 ms', ''], ['整条 CUDA Graph', 0.454, '0.454 ms', 'on']], max: 4.4, d: '9.3×',
+        note: 'RTX 4090 开发机，p50。0.454 ms 中 TensorRT 只占 0.106 ms，最大的一块是为了与训练逐位一致而保留的 float64 标量计算。6 个场景 863 个闭环决策选择零失配，覆盖率与 PyTorch 版本逐位相同。' },
+      collect: { rows: [['单卡 4090 · 1 环境', 1, '约 10.8 条/小时', ''], ['4 卡 · 128 环境', 17, '约 160–200 条/小时', 'on']], max: 18, d: '约 15–19×',
+        note: '四卡 RTX PRO 6000，2026-10-07 至 10-09 采完 8960 条链式样本，0 条审计剔除，28 个废回合整体丢弃，3 次卡死被自动重启。两边并行度、机器负载都不同，倍数按起算时间在 15–19× 之间，不是受控测量。' }
+    };
+    function setPerf(k) {
+      const p = PERF[k];
+      $('perfBars').innerHTML = p.rows.map(([n, v, l, c]) => `<div class="bar"><span>${n}</span><div class="t"><div class="f ${c}" style="width:${v / p.max * 100}%"></div></div><b>${l}</b></div>`).join('');
+      $('perfDelta').textContent = p.d;
+      $('perfNote').textContent = p.note;
+    }
+    bindSeg('perf', setPerf);
+    setPerf('edge');
+
+    // ---------- 06 horizon ----------
+    const HZ = { one: [['候选 c22', 96.47, 1], ['候选 c11', 44.33, 0]], multi: [['候选 c22', 96.47, 0], ['候选 c11', 118.08, 1]] };
+    function setHz(k) {
+      $('hzBars').innerHTML = HZ[k].map(([n, v, best]) => `<div class="bar"><span>${n}</span><div class="t"><div class="f${best ? ' on' : ''}" style="width:${v / 125 * 100}%"></div></div><b>${v.toFixed(2)} m³</b></div>`).join('');
+      $('hzVerdict').innerHTML = k === 'one'
+        ? '<span class="pill mute">一步最优</span> c22 这一步看到的新空间最多，c11 不到它的一半。'
+        : '<span class="pill ok">排序反转</span> 续飞 30 秒后，c22 停在 96.47 m³，c11 打开了后续通路，达到 118.08 m³。';
+    }
+    bindSeg('hz', setHz);
+    setHz('one');
+  </script>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TTS 首音延迟 · 余奕辰</title>
+  <meta name="description" content="vLLM-Omni PR #6577：让 TTS 并发基准按并发档位报告首音延迟的 P50 / P99。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/home.css">
+  <link rel="stylesheet" href="../assets/case.css">
+  <style>
+    td.new, th.new { background: var(--ok-bg); }
+    td.new { color: var(--ok); }
+    .col-new { display: none; }
+    .show-new .col-new { display: table-cell; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="../index.html">余奕辰</a>
+    <nav>
+      <a href="../index.html">经历</a>
+      <a href="https://github.com/vllm-project/vllm-omni/pull/6577" target="_blank" rel="noreferrer">PR ↗</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="kicker">VLLM-OMNI · PR #6577 · MERGED</p>
+      <h1>平均首音延迟，<br>藏住了最慢的那几路。</h1>
+      <p class="lede">TTS 服务最影响体验的是用户等多久才听到第一段声音。原来的并发基准只报这个延迟的平均值。这个 PR 让每个并发档位都输出 P50 和 P99，尾部延迟能直接从汇总表里读出来。</p>
+      <p class="meta">benchmarks/tts · 2 个文件 +219 / −10 · 关联 RFC #6496</p>
+    </section>
+
+    <section class="step">
+      <p class="kicker">01 · 汇总表缺了什么</p>
+      <h2>表里只有平均值，<br>看不出并发上去之后尾部拉长了多少。</h2>
+      <p>基准会扫过多个并发档位，报告 RTF、吞吐和平均首音延迟 (TTFP)。社区 RFC 明确指出缺少按并发档位统计的中位数和 P99。切换下面两个版本，对比同一组实测数据在表里呈现出的信息。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="汇总表版本">
+          <button type="button" data-tbl="old" aria-pressed="true">修改前</button>
+          <button type="button" data-tbl="new" aria-pressed="false">修改后</button>
+        </div>
+        <div class="scroll">
+          <table id="tbl">
+            <thead><tr><th>模型</th><th>并发</th><th>RTF</th><th>TTFP 均值 ms</th><th class="col-new new">TTFP P50</th><th class="col-new new">TTFP P99</th><th>吞吐</th></tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+        <p class="verdict" id="tblVerdict"></p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">02 · 两个拦路的细节</p>
+      <h2>默认只算 P99，<br>结果文件还有两种格式。</h2>
+      <p><code>vllm bench serve</code> 默认只统计 P99，所以拿不到中位数。PR 给 TTS 基准加了 <code>--metric-percentiles</code>，默认 <code>50,99</code>，只影响这个 TTS 封装。读结果时还要兼容两种格式：vllm-omni 会把分位数拍平成独立字段，上游结果仍是原始分位数列表。旧结果文件没有分位数时显示 n/a，不会报错。选一种结果文件，看汇总表从哪里取值。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="结果文件格式">
+          <button type="button" data-fmt="flat" aria-pressed="true">vllm-omni · 平铺字段</button>
+          <button type="button" data-fmt="rows" aria-pressed="false">上游 · 分位数列表</button>
+          <button type="button" data-fmt="legacy" aria-pressed="false">旧结果文件</button>
+        </div>
+        <div class="code" id="fmtCode"></div>
+        <div class="flow">
+          <span class="node" id="nFlat">读平铺字段</span><span class="arrow">→</span>
+          <span class="node" id="nRows">回退：分位数列表</span><span class="arrow">→</span>
+          <span class="node" id="nNa">n/a</span>
+        </div>
+        <p class="verdict" id="fmtVerdict"></p>
+        <p class="caption">新增 7 个单元测试，覆盖参数透传、两种格式的取值和 n/a 降级；测试文件共 14 个用例通过。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">03 · 实测</p>
+      <h2>并发到 4 时，<br>P99 比中位数高出一截。</h2>
+      <p>单张 RTX 4090，两种结构不同的 TTS 模型，voice clone 任务，并发 1 和 4。每档只有 8 条请求，所以这里的 P99 只用来验证报表能如实反映尾部，不作为容量结论。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="模型">
+          <button type="button" data-model="cosy" aria-pressed="true">CosyVoice3-0.5B</button>
+          <button type="button" data-model="qwen" aria-pressed="false">Qwen3-TTS-1.7B</button>
+        </div>
+        <div class="seg" role="group" aria-label="并发">
+          <button type="button" data-conc="4" aria-pressed="true">并发 4</button>
+          <button type="button" data-conc="1" aria-pressed="false">并发 1</button>
+        </div>
+        <div class="bars">
+          <div class="bar"><span>均值</span><div class="t"><div class="f" id="bMean"></div></div><b id="vMean"></b></div>
+          <div class="bar"><span>P50</span><div class="t"><div class="f on" id="bP50"></div></div><b id="vP50"></b></div>
+          <div class="bar"><span>P99</span><div class="t"><div class="f warn" id="bP99"></div></div><b id="vP99"></b></div>
+        </div>
+        <p class="delta" id="tail"></p>
+        <p class="caption" id="tailCap"></p>
+      </div>
+    </section>
+
+    <section class="contact">
+      <a class="back" href="../index.html">← 返回经历</a>
+      <a class="back" href="vae-tiling.html">#7774 显存排查 →</a>
+      <a class="back" href="https://github.com/vllm-project/vllm-omni/pull/6577" target="_blank" rel="noreferrer">打开 PR #6577 ↗</a>
+    </section>
+  </main>
+
+  <footer>© 2026 余奕辰</footer>
+
+  <script src="../assets/case.js"></script>
+  <script>
+    // From PR #6577 test result (RTX 4090, voice_clone, 8 prompts, 1 warmup).
+    const R = {
+      cosy: { name: 'CosyVoice3-0.5B', 1: [0.156, 264, 261, 305, 6.511], 4: [0.459, 865, 945, 1167, 8.663] },
+      qwen: { name: 'Qwen3-TTS-1.7B', 1: [0.158, 70, 64, 97, 6.366], 4: [0.233, 125, 140, 155, 13.792] }
+    };
+
+    // 01 table
+    $('tbody').innerHTML = ['cosy', 'qwen'].flatMap(m => [1, 4].map(c => {
+      const [rtf, mean, p50, p99, thr] = R[m][c];
+      return `<tr><td>${R[m].name}</td><td class="num">${c}</td><td class="num">${rtf}</td><td class="num">${mean}</td>` +
+        `<td class="num col-new new">${p50}</td><td class="num col-new new">${p99}</td><td class="num">${thr}</td></tr>`;
+    })).join('');
+    function setTbl(v) {
+      $('tbl').classList.toggle('show-new', v === 'new');
+      $('tblVerdict').textContent = v === 'new'
+        ? 'CosyVoice3 并发 4：中位数 945 ms，P99 1167 ms，均值 865 ms 反而低于中位数。只看均值会同时低估典型延迟和尾部延迟。'
+        : '只有均值：CosyVoice3 并发 4 是 865 ms，看不出一半请求超过多少，最慢的又有多慢。';
+    }
+    bindSeg('tbl', setTbl);
+    setTbl('old');
+
+    // 02 formats
+    const FMT = {
+      flat:   { code: '{ "<em>p50_audio_ttfp_ms</em>": 945.0,\n  "<em>p99_audio_ttfp_ms</em>": 1167.0, ... }', path: 'flat', text: '直接读取平铺字段。' },
+      rows:   { code: '{ "<em>percentiles_audio_ttfp_ms</em>":\n    [[50, 945.0], [99, 1167.0]], ... }', path: 'rows', text: '找不到平铺字段，回退到原始分位数列表里取值。' },
+      legacy: { code: '{ "mean_audio_ttfp_ms": 865.0, ...\n  <s>// 没有任何分位数字段</s> }', path: 'na', text: '两处都没有，这一格显示 n/a，旧结果文件仍可汇总。' }
+    };
+    function setFmt(k) {
+      const f = FMT[k];
+      $('fmtCode').innerHTML = f.code;
+      const order = ['flat', 'rows', 'na'], hit = order.indexOf(f.path);
+      [['nFlat', 0], ['nRows', 1], ['nNa', 2]].forEach(([id, i]) => {
+        $(id).className = 'node ' + (i === hit ? (f.path === 'na' ? 'miss' : 'hit') : i < hit ? 'dim' : 'dim');
+      });
+      $('fmtVerdict').textContent = f.text;
+    }
+    bindSeg('fmt', setFmt);
+    setFmt('flat');
+
+    // 03 bars
+    let model = 'cosy', conc = 4;
+    function setBars() {
+      const [, mean, p50, p99] = R[model][conc], max = p99 * 1.1;
+      [['Mean', mean], ['P50', p50], ['P99', p99]].forEach(([k, v]) => {
+        $('b' + k).style.width = v / max * 100 + '%';
+        $('v' + k).textContent = v + ' ms';
+      });
+      const pct = Math.round((p99 / p50 - 1) * 100);
+      $('tail').textContent = `P99 比中位数 +${pct}%`;
+      $('tailCap').textContent = conc === 4
+        ? '并发 4 时尾部被拉开，汇总表现在能直接看到这一点。'
+        : '并发 1 的样本里，P99 与中位数相差的绝对值很小（几十毫秒）。';
+    }
+    bindSeg('model', v => { model = v; setBars(); });
+    bindSeg('conc', v => { conc = +v; setBars(); });
+    setBars();
+  </script>
+</body>
+</html>

@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ExpRL · VLM 引导探索 · 余奕辰</title>
+  <meta name="description" content="ExpRL 的 VLM 版本：每轮探索结束后由 Qwen3-VL-2B 输出区域偏好向量，进入轨迹选择器形成闭环。系统架构、融合算法、Jetson 实测与仿真结论。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/home.css">
+  <link rel="stylesheet" href="../assets/case.css">
+  <style>
+    .diagram { width: 100%; height: auto; display: block; }
+    .scroll-diagram { overflow-x: auto; }
+    .scroll-diagram svg { min-width: 760px; }
+    .diagram text { font-family: var(--sans); fill: var(--ink); }
+    .diagram .sub { font-size: 10.5px; fill: var(--muted); font-family: var(--mono); }
+    .diagram .nd { cursor: pointer; }
+    .diagram .nd:hover rect { filter: brightness(.96); stroke-width: 2; }
+    .diagram .nd.sel rect { stroke: var(--accent); stroke-width: 2.5; }
+    .diagram .edge { fill: none; stroke: #2b333b; stroke-width: 1.4; }
+    .diagram .edge.todo { stroke-dasharray: 5 4; stroke: #8a939c; }
+    .info { margin-top: 14px; padding: 14px 16px; border-left: 4px solid var(--accent); background: var(--bg); font-size: 15px; min-height: 52px; }
+    .info b { display: block; margin-bottom: 4px; }
+    .phases { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+    .phases button { font: 12px var(--mono); padding: 6px 10px; border: 1px solid var(--line); background: var(--paper); border-radius: 999px; cursor: pointer; color: var(--muted); }
+    .phases button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .phase h3 { margin: 0 0 10px; font-size: 18px; }
+    .phase dl { display: grid; grid-template-columns: 56px 1fr; gap: 6px 12px; margin: 0; font-size: 15px; }
+    .phase dt { font: 12px var(--mono); color: var(--muted); padding-top: 3px; }
+    .phase dd { margin: 0; }
+    .roles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 24px; }
+    .roles > div { padding: 16px 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+    .roles b { display: block; font-size: 15px; margin-bottom: 4px; }
+    .roles span { font-size: 14px; color: var(--muted); }
+    .wrow { display: grid; grid-template-columns: 60px 1fr 28px; gap: 12px; align-items: center; font: 13px var(--mono); margin-bottom: 8px; }
+    .wrow input { accent-color: var(--accent); }
+    .fz { font: 13px var(--mono); }
+    .fz td, .fz th { padding: 7px 6px; }
+    .fz tr.best td { background: var(--ok-bg); font-weight: 600; }
+    .fz tr.geo td:first-child::after { content: " ·几何首选"; color: var(--muted); font-weight: 400; }
+    .cols { display: grid; grid-template-columns: minmax(0, 280px) 1fr; gap: 24px; align-items: start; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 18px; }
+    .stats div { padding: 12px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+    .stats b { display: block; font: 500 22px var(--mono); color: var(--accent); }
+    .stats span { font-size: 12px; color: var(--muted); }
+    .status { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
+    .status > div { padding: 16px 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+    .status ul { margin: 8px 0 0; padding-left: 18px; font-size: 14px; color: var(--muted); }
+    @media (max-width: 760px) {
+      .roles, .status, .cols { grid-template-columns: 1fr; }
+      .stats { grid-template-columns: 1fr 1fr; }
+      .phase dl { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="../index.html">余奕辰</a>
+    <nav>
+      <a href="../index.html">经历</a>
+      <a href="research.html">ExpRL 主线</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="kicker">科研项目 · EXPRL · VLM 版本</p>
+      <h1>一轮探索飞完，<br>下一轮该优先补扫哪里？</h1>
+      <p class="lede">ExpRL 主线的价值网络只懂几何：哪里还没看到、飞过去能看到多少。它不懂“红色柜子后面还没扫”这种语义。这条支线让视觉语言模型 (VLM) 在每轮探索结束后看一遍现场，输出一个按地图区域对齐的偏好向量，作为轨迹选择器的一路输入，形成“观测 → 偏好 → 选轨 → 新观测”的闭环。</p>
+      <p class="meta">Qwen3-VL-2B · Q4_K_M · Jetson 真机推理 P95 3.36 s · 目标区覆盖 22.28 → 26.15 m³（仿真，8 个任务）</p>
+    </section>
+
+    <section class="step">
+      <p class="kicker">01 · 任务与分工</p>
+      <h2>语言说做什么，视觉说在哪里，<br>动作仍由原来的选择器决定。</h2>
+      <p>项目最终要部署在 Jetson 上，模型不能大，也不能进入每个控制周期。所以 VLM 不直接输出飞控指令，只在轮与轮之间做一次判断；低层规划、净空检查和安全停车全部沿用原系统。三者的分工是：</p>
+      <div class="roles">
+        <div><b>VLM · 轮间</b><span>读关键帧、覆盖地图和探索历史，判断下一轮各区域的补扫优先级，输出 0–4 的整数权重。</span></div>
+        <div><b>几何 · 每个决策</b><span>把每条候选轨迹的末端视野投射到地图上，算出它在每个区域能看到多少未知体积。</span></div>
+        <div><b>选择器 · 每个决策</b><span>在原几何排序上叠加“偏好 × 可见收益”，选出一条，再交给原安全检查和控制器执行。</span></div>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">02 · 系统架构</p>
+      <h2>快环照常跑，<br>慢环每轮给一次偏好。</h2>
+      <p>上面一层是原有的几何闭环，约 10 Hz 持续运行；下面一层只在一轮结束时触发。偏好向量与生成它的地图快照绑定，地图版本对不上、向量缺失或格式不合法时，选择器退回纯几何排序。虚线是现行三维栈上尚未在物理选轨中验收的数据流。点击模块看说明。</p>
+      <div class="panel">
+        <div class="scroll-diagram"><svg class="diagram" id="sys" viewBox="0 0 1000 500" role="img" aria-label="VLM 版本系统架构图"></svg></div>
+        <div class="info" id="sysInfo"><b>点击图中的模块</b>查看它做什么。</div>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">03 · 偏好怎么进入选轨</p>
+      <h2>不改原排序的权重，<br>只在它上面加一项语义分。</h2>
+      <p>融合规则来自实验代码 <code>fusion.py</code>。每条候选的几何分按原排名线性归一化到 [0, 1]；语义分是“偏好权重减去均值”与“该候选在各区域的可见未知体积”的内积，再按候选池最大可见收益归一化。总分 = 几何分 + blend × 语义分。权重全部相同、向量失效或 blend 为 0 时，结果与原排序完全一致。拖动区域权重和 blend，看首选怎么换。</p>
+      <div class="panel">
+        <div class="cols">
+          <div>
+            <div class="wrow"><span>区域 A</span><input type="range" min="0" max="4" step="1" value="1" data-w="0" aria-label="区域 A 权重"><b id="wv0"></b></div>
+            <div class="wrow"><span>区域 B</span><input type="range" min="0" max="4" step="1" value="0" data-w="1" aria-label="区域 B 权重"><b id="wv1"></b></div>
+            <div class="wrow"><span>区域 C</span><input type="range" min="0" max="4" step="1" value="4" data-w="2" aria-label="区域 C 权重"><b id="wv2"></b></div>
+            <div class="wrow"><span>blend</span><input type="range" min="0" max="3" step="0.25" value="2" id="blend" aria-label="融合系数"><b id="bv"></b></div>
+            <div class="code" style="margin-top:14px">score = geo + blend ·
+  Σ (w_r − mean w) · gain_r
+  ─────────────────────
+       4 · max_c Σ gain</div>
+          </div>
+          <div class="scroll">
+            <table class="fz"><thead><tr><th>候选</th><th>A / B / C 可见</th><th>几何</th><th>语义</th><th>总分</th></tr></thead><tbody id="fzBody"></tbody></table>
+            <p class="verdict" id="fzVerdict"></p>
+          </div>
+        </div>
+        <p class="caption">5 条候选的可见体积是示意数据；公式与回退条件与实验代码一致。</p>
+      </div>
+      <div class="panel">
+        <p style="margin:0 0 10px"><b>VLM 的输入输出被约束得很死</b></p>
+        <div class="code">输入  区域表：每个区域的未知体积、最佳候选可见未知、近两轮实际增益
+      区域裁剪的 RGB 关键帧 + 当前覆盖俯视图（暗灰为未知，字母为区域）
+输出  JSON schema 强制 → <em>{"weights": {"A": 0–4, "B": 0–4, "C": 0–4}}</em>
+      temperature 0 · max_tokens 80 · 绑定地图快照 ID</div>
+        <p class="caption" style="margin-top:0">输出只能是整数权重，不让模型生成坐标或轨迹；数值类统计（未知体积、重访）都由代码算好再给它。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">04 · 一路怎么迭代过来</p>
+      <h2>先确认 VLM 该做什么，<br>再确认它到底有没有用。</h2>
+      <p>每一轮都按 autoresearch 的方式推进：固定评估、一次只改一个因素、结果写进记录表。点击阶段看问题、做法和结果。</p>
+      <div class="panel">
+        <div class="phases" id="phaseBtns" role="group" aria-label="阶段"></div>
+        <div class="phase" id="phase"></div>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">05 · Jetson 闭环实验</p>
+      <h2>补扫目标区多了 3.87 m³，<br>代价是全图覆盖。</h2>
+      <p>推理在 Jetson 真机上运行，闭环观测来自三维仿真。冻结配置后启用 4 个确认布局、8 个任务，每组相同起点、四轮预算。“oracle”组直接把真实目标区设为权重 4，是这个融合接口能达到的上限参考。</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="覆盖口径">
+          <button type="button" data-cov="target" aria-pressed="true">目标区新增覆盖</button>
+          <button type="button" data-cov="global" aria-pressed="false">全图新增覆盖</button>
+        </div>
+        <div class="bars" id="covBars"></div>
+        <p class="verdict" id="covVerdict"></p>
+        <div class="stats">
+          <div><b>3.36 s</b><span>单轮决策 P95（RGB 证据 → 偏好向量）</span></div>
+          <div><b>8.0 GiB</b><span>并发时最低可用内存，swap 无增长</span></div>
+          <div><b>9.96 Hz</b><span>并行地图回放 2,989 个周期，0 次超期</span></div>
+          <div><b>13 / 32</b><span>次决策改变了同状态下的几何首选</span></div>
+        </div>
+        <p class="caption">仿真预先划分了三个候选区域，RGB 与地图区域准确对齐，补扫任务也是给定的；这些结果只支持“VLM 给已有区域排优先级”。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">06 · 换到真实规划器</p>
+      <h2>偏好能改变路线，<br>但改出来的路线未必更好。</h2>
+      <p>接到 Isaac Sim 原链路和训练好的 P11 规划器：Isaac 在 4090 上执行并采集 D435 RGB-D，Qwen3-VL-2B 在 Mac 上推理。两个场景先用 P11 探索三轮，核对地图和位姿一致后各跑四轮补扫。</p>
+      <div class="panel">
+        <div class="scroll">
+          <table>
+            <thead><tr><th>场景</th><th>P11 原策略</th><th>P11 + 地图偏好</th><th>P11 + RGB-D 与地图偏好</th></tr></thead>
+            <tbody>
+              <tr><td class="num">50000001</td><td class="num">311.50 m³</td><td class="num">233.13 m³</td><td class="num">233.13 m³</td></tr>
+              <tr><td class="num">61202141</td><td class="num">374.50 m³</td><td class="num">430.50 m³</td><td class="num">430.50 m³</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="verdict">一个场景少扫 78.38 m³，另一个多扫 56.00 m³：换轨那一轮多看到一些，却把后续探索带到了收益更低的路线。加入 RGB 后 8 次决策里 6 次输出了不同向量，但最终执行的 8 条轨迹完全一样。</p>
+      </div>
+      <p style="margin-top:28px">随后跑了约 5 小时的语义 autoresearch，共审计 116 次仿真运行。最典型的一个红柜补扫案例：</p>
+      <div class="panel">
+        <div class="seg" role="group" aria-label="候选">
+          <button type="button" data-al="pick" aria-pressed="true">三组都选了 k1</button>
+          <button type="button" data-al="best" aria-pressed="false">同一候选池里的 k2</button>
+        </div>
+        <div class="bars" id="alBars"></div>
+        <p class="verdict" id="alVerdict"></p>
+        <p class="caption">6 个起始状态、每个 5 条首轨再统一续跑三轮：5 个状态里首轮最优与四轮累计最优不是同一条，只按首轮选平均少扫 59.15 m³。</p>
+      </div>
+    </section>
+
+    <section class="step">
+      <p class="kicker">07 · 现在在哪</p>
+      <h2>先把多步价值做对，<br>再测 VLM 的独立贡献。</h2>
+      <p>P11 和现行开发版本差异很大，所以实验切到现行三维栈：N10 <code>local_3d</code> 冻结权重、最多 28 条三维候选、0.1 m 体素。地图被切成三维区域，候选末端视野与区域逐一关联。Cal-01 两臂真实 RGB-D 同步已验收；一个中途四图输入在 6K 上下文下完整返回了 66 个区域权重并投影到 28 条候选，但权重全为零，4K 上下文则输出截断。</p>
+      <div class="status">
+        <div>
+          <span class="pill ok">已验证</span>
+          <ul>
+            <li>偏好向量能接入选轨并改变实际飞行路线。</li>
+            <li>Jetson 能在轮间承载 2B 级 VLM，几何快环不受影响。</li>
+            <li>同一状态下一步与多步收益的排序会稳定反转，短视真实存在。</li>
+          </ul>
+        </div>
+        <div>
+          <span class="pill warn">进行中</span>
+          <ul>
+            <li>从中途快照采多步收益标签，比较“一步+历史”“多步无历史”“多步+历史”。</li>
+            <li>提高关键帧信息量，让 VLM 在现行栈上给出非中性的区域偏好。</li>
+            <li>多步模型通过留出验证后，在同一选择器上对照开关 VLM。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="contact">
+      <a class="back" href="research.html">← ExpRL 主线：价值网络</a>
+      <a class="back" href="../index.html">返回经历</a>
+    </section>
+  </main>
+
+  <footer>© 2026 余奕辰</footer>
+
+  <script src="../assets/case.js"></script>
+  <script>
+    const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const FILL = {
+      sense: ['#ece0f2', '#8a6aa5'], map: ['#fbe3e3', '#c98a8a'], cand: ['#dfe9f8', '#5b7fbf'],
+      rank: ['#f7f3d5', '#a39a5a'], exec: ['#dff0e8', '#0f7b5a'], vlm: ['#fbe1c4', '#c08a4a'],
+      ev: ['#e7efe1', '#7c9a6c'], vec: ['#e4e3f4', '#6f6fa0']
+    };
+    const MARKER = `<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2b333b"/></marker></defs>`;
+    function node(n) {
+      const [f, s] = FILL[n.c], cx = n.x + n.w / 2, cy = n.y + n.h / 2;
+      let t = `<text x="${cx}" y="${n.sub ? cy - 3 : cy + 4.5}" text-anchor="middle" font-size="13" font-weight="${n.bold ? 600 : 500}">${esc(n.t)}</text>`;
+      if (n.sub) t += `<text class="sub" x="${cx}" y="${cy + 13}" text-anchor="middle">${esc(n.sub)}</text>`;
+      return `<g class="nd" data-id="${n.id}" tabindex="0" role="button" aria-label="${esc(n.t)}"><rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="6" fill="${f}" stroke="${s}" stroke-width="1.3"/>${t}</g>`;
+    }
+    const edge = (p, todo) => `<polyline class="edge${todo ? ' todo' : ''}" points="${p.map(q => q.join(',')).join(' ')}" marker-end="url(#ah)"/>`;
+
+    // ---------- system diagram ----------
+    const SYS = [
+      { id: 'S', c: 'sense', x: 30, y: 62, w: 150, h: 50, t: 'Isaac Sim', sub: 'D435 RGB-D + 位姿', info: '仿真里的 RealSense D435：深度走建图，RGB 只在关键帧时旁路记录。每张 RGB 复用当次深度文件和相机位姿，保证图像和地图能对齐。' },
+      { id: 'M', c: 'map', x: 220, y: 62, w: 150, h: 50, t: '三维占据图', sub: '0.1 m 体素', info: '深度帧按采集时刻的位姿投影到地图坐标系，更新空闲 / 占据 / 未知三态。覆盖量全部用实际深度和位姿独立计量。' },
+      { id: 'C', c: 'cand', x: 410, y: 62, w: 150, h: 50, t: '候选生成 + 净空', sub: '最多 28 条', info: '现行 N11 v2 候选生成：XYZ 平移与机体偏航组合，先过净空检查和避重访规则。安全约束在模型外部，任何偏好都不能绕过它。' },
+      { id: 'R', c: 'rank', x: 600, y: 62, w: 150, h: 50, t: '选轨评分器', sub: 'N10 冻结 · 多步待验收', bold: true, info: '当前物理选轨用 N10 local_3d 冻结权重（190,625 参数）。计划用中途快照的 30 秒分支数据训练多步价值模型替换它；VLM 偏好以逐候选特征的形式进入这里。' },
+      { id: 'X', c: 'exec', x: 800, y: 62, w: 160, h: 50, t: '安全检查 + 执行', sub: '原控制器', info: '选中的候选交给原有的执行保护和控制器飞完，产生新的观测与已执行轨迹。' },
+      { id: 'K', c: 'sense', x: 30, y: 250, w: 150, h: 50, t: 'RGB-D 关键帧', sub: '每支最多 3 帧', info: '每 60 个物理拍保留一次正常飞行画面。封存时检查每帧在该决策之前已可用，避免把未来的画面带进当时的判断。Cal-01 两臂的真实同步已在 Isaac Sim 验收。' },
+      { id: 'A', c: 'cand', x: 410, y: 250, w: 150, h: 50, t: '候选-区域关联', sub: '末端视野射线', info: '用当时的网格投射每条候选末端的 D435 视野，每条射线只计入第一个未知体素，已观测的障碍会遮挡后方。得到每条候选在每个区域能看到的未知体积。' },
+      { id: 'H', c: 'ev', x: 800, y: 250, w: 160, h: 50, t: '区域探索历史', sub: '访问 · 增益 · 停滞', info: '由代码按因果观测差分算出：哪些区域到访过、各自获得了多少新覆盖、多久没有进展。数值统计不交给 VLM 去读图估计。' },
+      { id: 'E', c: 'ev', x: 220, y: 380, w: 170, h: 54, t: '证据包', sub: '关键帧·分高度地图·历史', info: '按区域 ID 组织：RGB 关键帧裁剪、按高度切片渲染的占据图（每个区域标 R{x}-{y}-{z}）、候选关联与区域历史。整个包绑定观测事件 ID 和地图哈希。' },
+      { id: 'V', c: 'vlm', x: 430, y: 380, w: 170, h: 54, t: 'Qwen3-VL-2B', sub: 'Q4_K_M + Q8_0 视觉', bold: true, info: '两份权重合计约 1.55 GB。每轮结束调用一次，temperature 0，用 JSON schema 约束输出。Jetson 上单轮 P95 3.36 s，因此放在轮间，不进每个控制周期。' },
+      { id: 'P', c: 'vec', x: 640, y: 380, w: 150, h: 54, t: '区域偏好向量', sub: '0–4 整数 · 绑定快照', info: '每个区域一个 0–4 的整数权重，并带上生成它的地图快照 ID。快照不匹配、区域集合不一致、值越界或全部相同，都视为无效，选择器退回纯几何。' },
+      { id: 'F', c: 'vec', x: 600, y: 160, w: 150, h: 46, t: '逐候选语义特征', info: '偏好向量与候选-区域可见体积做内积，变成每条候选一个标量，进入评分器。仿真实验里它以加法融合（见 03 节）；现行栈上计划作为评分器输入特征。' }
+    ];
+    (function () {
+      let s = MARKER;
+      s += `<rect x="6" y="14" width="988" height="120" rx="8" fill="#f6f6f2" stroke="#e3e3dc"/><text x="20" y="40" font-size="13" font-weight="600">快环 · 每个决策（几何闭环约 10 Hz）</text>`;
+      s += `<rect x="6" y="226" width="988" height="230" rx="8" fill="#fbf6ee" stroke="#ecdcc4"/><text x="20" y="476" font-size="13" font-weight="600">慢环 · 每轮结束一次（VLM 复查）</text>`;
+      SYS.forEach(n => { s += node(n); });
+      [[[180, 87], [220, 87]], [[370, 87], [410, 87]], [[560, 87], [600, 87]], [[750, 87], [800, 87]],
+       [[880, 62], [880, 24], [105, 24], [105, 62]],
+       [[105, 112], [105, 250]], [[485, 112], [485, 250]], [[295, 112], [295, 190], [440, 190], [440, 250]],
+       [[880, 112], [880, 250]],
+       [[105, 300], [105, 407], [220, 407]], [[485, 300], [485, 340], [330, 340], [330, 380]],
+       [[880, 300], [880, 350], [360, 350], [360, 380]],
+       [[390, 407], [430, 407]], [[600, 407], [640, 407]]
+      ].forEach(p => { s += edge(p); });
+      [[[715, 380], [715, 206]], [[560, 275], [580, 275], [580, 183], [600, 183]], [[675, 160], [675, 112]]].forEach(p => { s += edge(p, true); });
+      s += `<text x="490" y="20" font-size="11" fill="#5d6670" text-anchor="middle">新观测 → 下一次决策</text>`;
+      s += `<text x="985" y="218" font-size="11" fill="#8a939c" text-anchor="end">虚线：现行栈上尚未在物理选轨中验收</text>`;
+      $('sys').innerHTML = s;
+      const pick = g => {
+        $('sys').querySelectorAll('.nd').forEach(x => x.classList.toggle('sel', x === g));
+        const n = SYS.find(x => x.id === g.dataset.id);
+        $('sysInfo').innerHTML = `<b>${esc(n.t)}${n.sub ? ' · ' + esc(n.sub) : ''}</b>${n.info}`;
+      };
+      $('sys').querySelectorAll('.nd').forEach(g => {
+        g.addEventListener('click', () => pick(g));
+        g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(g); } });
+      });
+    })();
+
+    // ---------- fusion demo (same math as fusion.py; gains illustrative) ----------
+    const CAND = [['k1', [6, 1, 0]], ['k2', [2, 5, 1]], ['k3', [3, 2, 2]], ['k4', [1, 1, 6]], ['k5', [0, 2, 4]]];
+    const W = [1, 0, 4];
+    function fuse() {
+      const blend = +$('blend').value;
+      W.forEach((w, i) => { $('wv' + i).textContent = w; });
+      $('bv').textContent = blend.toFixed(2);
+      const valid = new Set(W).size >= 2 && blend > 0;
+      const mean = W.reduce((a, b) => a + b, 0) / W.length;
+      const cap = Math.max(...CAND.map(([, g]) => g.reduce((a, b) => a + b, 0)));
+      const rows = CAND.map(([id, g], i) => {
+        const geo = 1 - i / (CAND.length - 1);
+        const sem = valid ? g.reduce((a, x, r) => a + (W[r] - mean) * x, 0) / (4 * cap) : 0;
+        return { id, g, geo, sem, score: geo + (valid ? blend * sem : 0) };
+      });
+      const best = rows.reduce((a, b) => (b.score > a.score ? b : a));
+      $('fzBody').innerHTML = rows.map((r, i) => `<tr class="${r === best ? 'best' : ''} ${i === 0 ? 'geo' : ''}"><td>${r.id}</td><td>${r.g.join(' / ')}</td><td>${r.geo.toFixed(2)}</td><td>${valid ? (r.sem >= 0 ? '+' : '') + r.sem.toFixed(2) : '—'}</td><td>${r.score.toFixed(2)}</td></tr>`).join('');
+      $('fzVerdict').innerHTML = !valid
+        ? '<span class="pill mute">回退</span> 权重全部相同或 blend = 0：向量不携带偏好，选择与原几何排序完全一致。'
+        : best.id === 'k1'
+          ? '<span class="pill mute">未改变</span> 偏好不足以抵过几何排名差，仍选几何首选 k1。'
+          : `<span class="pill ok">换轨</span> 偏好把 ${best.id} 推到了几何首选 k1 前面。`;
+    }
+    document.querySelectorAll('[data-w]').forEach(el => el.addEventListener('input', () => { W[+el.dataset.w] = +el.value; fuse(); }));
+    $('blend').addEventListener('input', fuse);
+    fuse();
+
+    // ---------- phases ----------
+    const PH = [
+      ['文本 LLM 基线', '三维探索一直没有语言模型基线；部署平台是 Jetson，参数量受限。', '先用 Qwen2.5-0.5B 读结构化候选摘要直接选动作，再换 Qwen3-1.7B（Q4_K_M）把指令转成地图目标，几何模块负责选视点。', '纯文本模型只能理解“左边”“上层”这类结构化目标，无法处理“红色柜子后方”这种需要看图的指令，于是转向多模态。'],
+      ['VLM 复查', '一轮探索结束后，能不能让 VLM 看结果说出“红柜后方还要补扫”？', '选 Qwen3-VL-2B（Q4_K_M + Q8_0 视觉组件，约 1.55 GB）在 Jetson 上做每轮复查，1.5 小时按 autoresearch 迭代。', '直接让 VLM 判断是否补扫，第一版漏掉全部 8 个应补扫样例；改成柜体 ID 裁剪图 + 程序绑定证据后，12 个合成样例全部判对，15 分钟并发 180 次请求 P95 1.40 s。'],
+      ['纠偏：VLM 应该输出偏好', '这样 VLM 只在判断柜体颜色，太窄了；而且它的结果没有回到轨迹选择里，不是闭环。', '重新定义接口：VLM 根据场景和探索历史输出下一轮的区域偏好向量，作为轨迹选择器的一部分输入；向量缺失或过期时沿用几何排序。', '形成“观测 → 偏好 → 选轨 → 新观测”的闭环，融合规则写成 fusion.py。'],
+      ['Jetson 闭环', '这个闭环在端侧跑得动吗？偏好真的改善补扫吗？', 'Jetson 真机推理 + 三维仿真观测，4 个布局 8 个任务，对照几何、文字摘要、RGB+地图 VLM 和 oracle 四组。', '目标区新增覆盖 22.28 → 26.15 m³，四个布局都高于两组对照；全图覆盖比文字组少 4.21 m³。P95 3.36 s，几何回放 0 次超期。'],
+      ['真实规划器', '换成 Isaac Sim 原链路和训练好的 P11 规划器，还成立吗？', 'Isaac 在 4090 执行并采集 RGB-D，VLM 在 Mac 推理，偏好加到 P11 候选分上；之后跑 5 小时语义 autoresearch，审计 116 次运行。', '偏好能改变路线，但覆盖一升一降；RGB 相对仅地图没有额外收益。红柜案例里更好的轨迹已经在候选池中，只是没被排到首位——根子是选择器只看一步。'],
+      ['现行三维栈', 'P11 和现行开发版本差异很大，结论不能直接迁移。', '切到 N10 local_3d + N11 v2 候选；三维区域划分、候选末端视野关联、真实 RGB-D 关键帧采集；同时采集中途快照的多步收益标签。', 'RGB-D 同步已验收；VLM 在 6K 上下文完整返回 66 个区域权重但全为零。下一步先训练多步价值，再测 VLM 的独立贡献。']
+    ];
+    $('phaseBtns').innerHTML = PH.map((p, i) => `<button type="button" data-ph="${i}" aria-pressed="${i === 0}">${i + 1} · ${p[0]}</button>`).join('');
+    function setPh(i) {
+      const [t, prob, act, res] = PH[i];
+      $('phase').innerHTML = `<h3>${t}</h3><dl><dt>问题</dt><dd>${prob}</dd><dt>做法</dt><dd>${act}</dd><dt>结果</dt><dd>${res}</dd></dl>`;
+    }
+    bindSeg('ph', v => setPh(+v));
+    setPh(0);
+
+    // ---------- coverage (confirm-01: 4 layouts, 8 tasks) ----------
+    const COV = {
+      target: [['原几何排序', 22.28, ''], ['文字摘要偏好', 22.69, ''], ['RGB+地图 VLM', 26.15, 'on'], ['oracle 上限', 28.82, 'warn']],
+      global: [['原几何排序', 71.06, ''], ['文字摘要偏好', 75.79, ''], ['RGB+地图 VLM', 71.59, 'on'], ['oracle 上限', 65.27, 'warn']]
+    };
+    function setCov(k) {
+      const max = k === 'target' ? 30 : 80;
+      $('covBars').innerHTML = COV[k].map(([n, v, c]) => `<div class="bar"><span>${n}</span><div class="t"><div class="f ${c}" style="width:${v / max * 100}%"></div></div><b>${v.toFixed(2)} m³</b></div>`).join('');
+      $('covVerdict').textContent = k === 'target'
+        ? 'VLM 比几何组多 3.87 m³、比文字组多 3.46 m³，离 oracle 上限还差 2.67 m³。'
+        : '全图口径下 VLM 组反而比文字组少 4.21 m³；oracle 更少。偏好越集中，越是用全图覆盖换目标区。';
+    }
+    bindSeg('cov', setCov);
+    setCov('target');
+
+    // ---------- alcove case ----------
+    const AL = { pick: [['k1（实际选中）', 1.88, 'on'], ['k2', 17.88, '']], best: [['k1', 1.88, ''], ['k2（池内最优）', 17.88, 'on']] };
+    function setAl(k) {
+      $('alBars').innerHTML = AL[k].map(([n, v, c]) => `<div class="bar"><span>${n}</span><div class="t"><div class="f ${c}" style="width:${v / 19 * 100}%"></div></div><b>${v.toFixed(2)} m³</b></div>`).join('');
+      $('alVerdict').innerHTML = k === 'pick'
+        ? '<span class="pill mute">P11 / VLM / 历史组</span> 三组都选了 k1，四轮只补扫到 1.88 m³。VLM 已经给 k2 加了分，但不够把它排到首位。'
+        : '<span class="pill ok">k2</span> 扫完了全部 17.88 m³ 目标体积，还少飞约 0.79 m，两次复跑一致。好轨迹在池里，缺的是看得更远的价值。';
+    }
+    bindSeg('al', setAl);
+    setAl('pick');
+  </script>
+</body>
+</html>
