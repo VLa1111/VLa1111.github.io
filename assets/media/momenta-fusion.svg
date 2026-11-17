@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" font-family="IBM Plex Mono, monospace">
+  <rect width="480" height="300" fill="#fafaf7"/>
+  <text x="24" y="34" font-size="14" font-weight="600" fill="#1d232a">APA 融合 · 漏检记忆触发</text>
+
+  <!-- frames timeline -->
+  <text x="24" y="66" font-size="11" fill="#6b747d">检测序列（12 帧示意）</text>
+  <g font-size="10">
+    <!-- normal frames -->
+    <rect x="24"  y="78" width="26" height="30" fill="#e5f4ee" stroke="#0f7b5a"/>
+    <rect x="54"  y="78" width="26" height="30" fill="#e5f4ee" stroke="#0f7b5a"/>
+    <rect x="84"  y="78" width="26" height="30" fill="#e5f4ee" stroke="#0f7b5a"/>
+    <rect x="114" y="78" width="26" height="30" fill="#e5f4ee" stroke="#0f7b5a"/>
+    <!-- missed frames 5,6 -->
+    <rect x="144" y="78" width="26" height="30" fill="#fbf0dc" stroke="#9a5a00" stroke-dasharray="3 2"/>
+    <rect x="174" y="78" width="26" height="30" fill="#fbf0dc" stroke="#9a5a00" stroke-dasharray="3 2"/>
+    <!-- recovered -->
+    <rect x="204" y="78" width="26" height="30" fill="#e5f4ee" stroke="#0f7b5a"/>
+    <rect x="234" y="78" width="26" height="30" fill="#e5f4ee" stroke="#0f7b5a"/>
+    <rect x="264" y="78" width="26" height="30" fill="#e5f4ee" stroke="#0f7b5a"/>
+    <!-- left -->
+    <rect x="294" y="78" width="26" height="30" fill="#f1f2f0" stroke="#b9c0c6"/>
+    <rect x="324" y="78" width="26" height="30" fill="#f1f2f0" stroke="#b9c0c6"/>
+    <rect x="354" y="78" width="26" height="30" fill="#f1f2f0" stroke="#b9c0c6"/>
+    <text x="157" y="124" font-size="9" fill="#9a5a00" text-anchor="middle">漏检</text>
+    <text x="337" y="124" font-size="9" fill="#6b747d" text-anchor="middle">已离开</text>
+  </g>
+
+  <!-- fusion output -->
+  <text x="24" y="166" font-size="11" fill="#6b747d">融合输出（记忆保留，稳定）</text>
+  <g>
+    <rect x="24" y="178" width="266" height="30" rx="4" fill="#dce7fb" stroke="#2456c9"/>
+    <text x="157" y="198" font-size="10" fill="#2456c9" text-anchor="middle">IOU / Track ID 匹配 + 漏检记忆触发 → 目标连续</text>
+    <rect x="294" y="178" width="86" height="30" rx="4" fill="#f1f2f0" stroke="#b9c0c6"/>
+    <text x="337" y="198" font-size="10" fill="#6b747d" text-anchor="middle">按距离清除</text>
+  </g>
+
+  <rect x="24" y="230" width="356" height="46" rx="6" fill="#ffffff" stroke="#e6e6df"/>
+  <text x="40" y="251" font-size="11" fill="#1d232a">避免障碍物"闪现/消失"导致的急刹与反复重规划</text>
+  <text x="40" y="269" font-size="11" fill="#2456c9">63 组机械车位 FN 回归 · 误检/漏检 Checker</text>
+</svg>

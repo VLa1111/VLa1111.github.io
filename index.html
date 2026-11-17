@@ -3,89 +3,235 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>余奕辰 · 经历</title>
-  <meta name="description" content="余奕辰的经历：vLLM-Omni 开源贡献、海康威视端侧 NPU 部署、Momenta 泊车感知、ExpRL 无人机自主探索。">
+  <meta name="description" content="余奕辰的个人主页：vLLM-Omni 开源贡献、海康威视端侧 NPU 部署、Momenta 泊车感知、ExpRL 无人机自主探索。">
+  <meta property="og:title" content="余奕辰 · 个人主页">
+  <meta property="og:type" content="website">
+  <title>余奕辰 · 个人主页</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/home.css">
-</head>
+  <link rel="stylesheet" href="assets/index.css">
+  <script src="assets/index.js" defer></script>
+<link rel="stylesheet" href="assets/theme.css"><script src="assets/theme.js"></script></head>
 <body>
-  <header class="top">
-    <a class="brand" href="index.html">余奕辰</a>
-    <nav>
-      <a href="https://github.com/VLa1111" target="_blank" rel="noreferrer">GitHub ↗</a>
-    </nav>
+  <a class="skip-link" href="#main">跳到正文</a>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="header-brand" href="index.html">余奕辰</a>
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="primary-nav" hidden>
+        <span>菜单</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <nav id="primary-nav" class="primary-nav" aria-label="主导航">
+        <a class="active" href="#about" aria-current="location">关于</a>
+        <a href="#open-source">开源贡献</a>
+        <a href="#experience">实习经历</a>
+        <a href="#research">科研项目</a>
+        <a href="#contact">联系</a>
+      </nav>
+    </div>
   </header>
 
-  <main>
-    <section class="block" id="experience">
-      <h2>经历</h2>
-      <ol class="timeline">
-
-        <li class="item" id="vllm-omni">
-          <div class="when">开源贡献</div>
-          <div>
-            <h3>vLLM-Omni · 多模态推理优化</h3>
-            <p class="role">社区 contributor · DiT 显存 / 动态 batching / 性能分析</p>
-            <ul class="prs">
-              <li><span class="tag ok">MERGED</span><a href="experiences/vae-tiling.html">#7774</a> VAE slicing / tiling 接通 DiT 解码；单独测解码，3072² tiling 峰值 22,146 → 2,748 MiB</li>
-              <li><span class="tag ok">MERGED</span><a href="experiences/tts-ttfp.html">#6577</a> TTS 并发 benchmark 增加首音延迟 P50 / P99</li>
-              <li><span class="tag open">OPEN</span><a href="experiences/qwen-image-2-1.html#pr9040">#9040</a> 按 prompt 长度组批，保住 CUDA Graph 路径，混合长度场景吞吐 +6.4% / +5.1%</li>
-              <li><span class="tag open">OPEN</span><a href="experiences/qwen-image-2-1.html#pr10376">#10376</a> 由 #9040 衍生：定位混合长度批次输出漂移的根因（图像 RoPE 位置随整批 padding 偏移），逐请求计算后 PSNR 27.66 → 45.16 dB，速度不变</li>
-              <li><span class="tag open">OPEN</span><a href="experiences/cpu-offload.html">#6897</a> 12 GB 显存预算内运行 34.6 GB 文生图模型，modelwise / layerwise CPU offload，峰值 11.5 GiB</li>
-            </ul>
-            <p class="nolink">点 PR 编号查看交互式详情。</p>
-          </div>
+  <div class="page-layout">
+    <aside class="profile" aria-label="个人信息">
+      <div class="portrait-wrap">
+        <div class="portrait-placeholder" role="img" aria-label="余奕辰头像占位">
+          <span class="portrait-monogram">余</span>
+        </div>
+      </div>
+      <h1>余奕辰</h1>
+      <p class="profile-detail profile-role"><span class="is-placeholder">研三在读</span></p>
+      <p class="profile-detail profile-affiliation"><span class="is-placeholder">哈尔滨工程大学</span></p>
+      <p class="profile-detail profile-tagline">多模态推理优化 · 端侧部署 · 无人机-VLM</p>
+      <p class="profile-detail profile-location">
+        <svg class="detail-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 6-8 11-8 11S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+        <span class="is-placeholder">哈尔滨</span>
+      </p>
+      <ul class="profile-links" aria-label="联系方式与主页">
+        <li>
+          <a href="https://github.com/VLa1111" target="_blank" rel="noreferrer">
+            <svg class="link-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 19 4.77 5.07 5.07 0 0 0 18.91 1S17.73.65 15 2.48a13.38 13.38 0 0 0-7 0C5.27.65 4.09 1 4.09 1A5.07 5.07 0 0 0 4 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 8 18.13V22"/></svg>
+            <span>GitHub</span>
+          </a>
         </li>
+        <li>
+          <a href="mailto:placeholder@example.com" aria-label="邮箱（占位）">
+            <svg class="link-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM3 5l9 7 9-7"/></svg>
+            <span class="is-placeholder">vyu112@foxmail.com</span>
+          </a>
+        </li>
+      </ul>
+    </aside>
 
-        <li class="item">
-          <div class="when">2026.06 — 2026.09</div>
-          <div>
+    <main id="main">
+      <section class="about-section" id="about" aria-labelledby="about-title">
+        <h1 id="about-title">关于我</h1>
+        <div class="biography">
+          <p class="is-placeholder">开源社区持续活跃中</p>
+          <p class="is-placeholder">希望可以独立负责一个板块💪成长为社区commiter</p>
+        </div>
+        <div class="draft-note"><span class="draft-label">熟悉的技术栈</span><p>Linux、Python、C/C++、CUDA、PyTorch、Git、Docker、vLLM</p></div>
+      </section>
+
+      <section id="open-source" class="content-section" aria-labelledby="open-source-title">
+        <h2 id="open-source-title" class="section-heading"><span class="section-icon" aria-hidden="true">⚙️</span> 开源贡献</h2>
+        <p class="section-lead">vLLM-Omni 多模态推理优化 · 社区 contributor · DiT 显存 / 动态 batching / 性能分析。每个 PR 都有交互式详情页。</p>
+        <article class="entry">
+          <div class="media-col">
+            <figure class="media logo src-note">
+              <img src="assets/media/vllm-omni-logo.jpg" alt="vLLM-Omni 项目标识" loading="lazy">
+
+            </figure>
+            <figure class="media contain">
+              <img src="assets/media/vllm-omni-arch.png" alt="vLLM-Omni 全模态模型架构图" loading="lazy" width="1400" height="713">
+
+            </figure>
+            <figure class="media">
+              <a href="experiences/qwen-image-2-1.html">
+                <img src="assets/media/pr10376-comparison.svg" alt="PR 10376：PSNR 27.66 → 45.16 dB，SSIM 0.964 → 0.997" loading="lazy">
+              </a>
+
+            </figure>
+          </div>
+          <div class="entry-body">
+            <p class="entry-kicker">VLLM-OMNI</p>
+            <h3>多模态推理优化</h3>
+            <ul class="prs">
+              <li>
+                <div class="pr-head"><span class="tag ok">MERGED</span><a href="experiences/vae-tiling.html">#7774</a></div>
+                VAE slicing / tiling 接通 DiT 解码；单独测解码，3072² tiling 峰值 22,146 → 2,748 MiB。
+              </li>
+              <li>
+                <div class="pr-head"><span class="tag ok">MERGED</span><a href="experiences/tts-ttfp.html">#6577</a></div>
+                TTS 并发 benchmark 增加首音延迟 P50 / P99。
+              </li>
+              <li>
+                <div class="pr-head"><span class="tag open">OPEN</span><a href="experiences/qwen-image-2-1.html#pr9040">#9040</a></div>
+                按 prompt 长度组批，使 decode 使用 CUDA Graph，混合长度场景吞吐 +6.4% / +5.1%。
+              </li>
+              <li>
+                <div class="pr-head"><span class="tag open">OPEN</span><a href="experiences/qwen-image-2-1.html#pr10376">#10376</a></div>
+                由 #9040 衍生：定位混合长度批次输出漂移的根因（图像 RoPE 位置随整批 padding 偏移），逐请求计算后 PSNR 27.66 → 45.16 dB，已测配置的去噪每步耗时相同。
+              </li>
+              <li>
+                <div class="pr-head"><span class="tag open">OPEN</span><a href="experiences/cpu-offload.html">#6897</a></div>
+                12 GB 显存预算内运行 34.6 GB 文生图模型，modelwise / layerwise CPU offload，峰值 11.5 GiB。
+              </li>
+            </ul>
+            <p class="links">
+              <a href="https://github.com/VLa1111" target="_blank" rel="noreferrer">GitHub</a>
+              <a href="experiences/vae-tiling.html">#7774 详情</a>
+              <a href="experiences/qwen-image-2-1.html">#9040 / #10376 详情</a>
+              <a href="experiences/cpu-offload.html">#6897 详情</a>
+            </p>
+          </div>
+        </article>
+      </section>
+
+      <section id="experience" class="content-section" aria-labelledby="experience-title">
+        <h2 id="experience-title" class="section-heading"><span class="section-icon" aria-hidden="true">💼</span> 实习经历</h2>
+
+        <article class="entry">
+          <div class="media-col">
+            <figure class="media logo">
+              <img src="assets/media/hikvision-logo.svg" alt="海康威视标识" loading="lazy">
+            </figure>
+            <figure class="media">
+              <a href="experiences/edge-inference.html">
+                <img src="assets/media/edge-nms-vectorload.svg" alt="NMS float4 向量装载示意" loading="lazy">
+              </a>
+
+            </figure>
+          </div>
+          <div class="entry-body">
+            <p class="entry-kicker">2026.06 — 2026.09</p>
             <h3>海康威视研究院 · 高性能计算部</h3>
             <p class="role">端侧推理 · NPU 量化 · 算子优化</p>
+            <p class="desc">围绕模型转换、量化精度与板端性能开展部署验证，并对不兼容算子和性能热点做针对性优化。</p>
             <ul class="bullets">
               <li>完成 31 个业务模型的端侧 NPU 部署，INT8 量化后板端平均余弦提升至 0.99。</li>
               <li>OCR INT8 Decoder 的 ConvTranspose 替换为等价算子链，整体余弦由 0.68 提升至 0.99。</li>
               <li>NMS 算子 float4 向量装载 + 面积预计算，Mali-G57 / Adreno642L 板端满载 1.32–1.44× 加速。</li>
             </ul>
-            <a class="inline" href="experiences/edge-inference.html">查看详情 →</a>
+            <p class="links"><a href="experiences/edge-inference.html">查看详情</a></p>
           </div>
-        </li>
+        </article>
 
-        <li class="item">
-          <div class="when">2025.12 — 2026.04</div>
-          <div>
+        <article class="entry">
+          <div class="media-col">
+            <figure class="media logo">
+              <img src="assets/media/momenta-logo.png" alt="Momenta 标识" loading="lazy">
+            </figure>
+            <figure class="media">
+              <a href="experiences/momenta.html">
+                <img src="assets/media/momenta-fusion.svg" alt="泊车感知融合记忆触发示意" loading="lazy">
+              </a>
+
+            </figure>
+          </div>
+          <div class="entry-body">
+            <p class="entry-kicker">2025.12 — 2026.04</p>
             <h3>Momenta · 泊车感知算法</h3>
             <p class="role">泊车感知业务算法 · 离线集测 · 数据闭环</p>
+            <p class="desc">工作覆盖在线感知融合与离线评测：前者处理检测结果的时序稳定性，后者通过回归测试与真值清洗验证算法效果。</p>
             <ul class="bullets">
               <li>参与 APA Parking Fusion 模块，设计 IOU/Track ID 匹配与记忆触发逻辑，降低障碍物闪现/消失对规划的扰动。</li>
               <li>开发车位感知误检/漏检 Checker，按车位类型拆分指标；完成 63 组机械车位 FN 回归。</li>
               <li>开发真值清洗脚本，清理影响障碍物评测置信度的脏数据。</li>
             </ul>
-            <a class="inline" href="experiences/momenta.html">查看详情 →</a>
+            <p class="links"><a href="experiences/momenta.html">查看详情</a></p>
           </div>
-        </li>
+        </article>
+      </section>
 
-        <li class="item">
-          <div class="when">2026.04 — 至今</div>
-          <div>
+      <section id="research" class="content-section" aria-labelledby="research-title">
+        <h2 id="research-title" class="section-heading"><span class="section-icon" aria-hidden="true">🔬</span> 科研项目</h2>
+
+        <article class="entry">
+          <div class="media-col">
+            <figure class="media">
+              <a href="experiences/research.html">
+                <img src="assets/media/exprl-candidates.svg" alt="五条候选路径价值评分示意" loading="lazy">
+              </a>
+
+            </figure>
+            <figure class="media">
+              <a href="experiences/exprl-vlm.html">
+                <img src="assets/media/exprl-loop.svg" alt="观测到偏好的闭环示意" loading="lazy">
+              </a>
+
+            </figure>
+          </div>
+          <div class="entry-body">
+            <p class="entry-kicker">2026.04 — 至今</p>
             <h3>ExpRL · 基于自监督轨迹价值预训练的无人机自主探索</h3>
             <p class="role">科研项目 · 决策模型 · 数采框架 · 端侧部署</p>
+            <p class="desc">将候选轨迹评分、仿真数据采集和推理部署串联为完整决策链路，同时验证探索覆盖率与决策耗时。</p>
             <ul class="bullets">
               <li>地图空间 token + 候选路径 query 的交叉注意力价值网络（49 万参数），带可学习衰减的决策历史；Isaac Sim 6 场景平均覆盖率 92.8%。</li>
               <li>Isaac Sim 多卡并行采集（16 worker × 8 env），累计 8960 条链式标签样本，0 条审计剔除。</li>
               <li>GPU 栅格化 + TensorRT + CUDA Graph 捕获整条决策链路，单决策 4.21 → 0.454 ms，闭环选择零失配。</li>
             </ul>
-            <a class="inline" href="experiences/research.html">查看详情 →</a>
-            <a class="inline" href="experiences/exprl-vlm.html">VLM 版本 →</a>
+            <p class="links">
+              <a href="experiences/research.html">主线详情</a>
+              <a href="experiences/exprl-vlm.html">VLM 版本</a>
+            </p>
           </div>
-        </li>
+        </article>
+      </section>
 
-      </ol>
-    </section>
-  </main>
+      <section id="contact" class="content-section contact-section" aria-labelledby="contact-title">
+        <h2 id="contact-title" class="section-heading"><span class="section-icon" aria-hidden="true">✉️</span> 联系</h2>
+        <p class="is-placeholder">联系方式待补充。</p>
+        <p><a href="https://github.com/VLa1111" target="_blank" rel="noreferrer">github.com/VLa1111</a></p>
+      </section>
 
-  <footer>© 2026 余奕辰</footer>
+      <footer class="site-footer">
+        <span>© 2026 余奕辰</span>
+        <a href="#about">回到顶部 ↑</a>
+      </footer>
+    </main>
+  </div>
 </body>
 </html>

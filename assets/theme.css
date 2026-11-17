@@ -1,0 +1,12 @@
+:root { color-scheme: light; }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #151a21; --paper: #1c232d; --ink: #e7edf4; --text: #c5cdd8;
+  --muted: #a1adbd; --line: #35404e; --accent: #90b4ff; --accent-dk: #bcd1ff;
+  --ok: #89d8b9; --ok-bg: #183a31; --warn: #efc585; --warn-bg: #3a3023;
+}
+.theme-toggle { border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; background: var(--paper); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.theme-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+[data-theme="dark"] .site-header, [data-theme="dark"] .top { background: #151a21f2; }
+[data-theme="dark"] .draft-note, [data-theme="dark"] .portrait-placeholder { background: var(--paper); }
+[data-theme="dark"] .seg button[aria-pressed="true"] { background: var(--accent); color: var(--bg); }

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="510" viewBox="0 0 760 510" role="img" aria-labelledby="title desc">
+<title id="title">PR 10376 输出一致性对比</title><desc id="desc">50步等长与混合长度批次比较：PSNR从27.66提升至45.16 dB，SSIM从0.964提升至0.997。20步测试中批大小2至4的每步耗时未变。</desc>
+<rect width="760" height="510" rx="12" fill="#f4f7fb"/>
+<g font-family="Arial, sans-serif" fill="#203049"><text x="36" y="53" font-size="25" font-weight="700">PR #10376 · Batch consistency</text><text x="36" y="86" font-size="17" fill="#53647b">50 steps · equal vs mixed prompt lengths</text>
+<path d="M36 112H724M36 166H724M36 235H724M36 304H724" stroke="#cbd5e1"/>
+<g font-size="19"><text x="36" y="147">Metric</text><text x="360" y="147">main</text><text x="550" y="147">PR #10376</text><text x="36" y="210">PSNR ↑</text><text x="360" y="210">27.66 dB</text><text x="550" y="210" fill="#146b52" font-weight="700">45.16 dB</text><text x="36" y="279">SSIM ↑</text><text x="360" y="279">0.964</text><text x="550" y="279" fill="#146b52" font-weight="700">0.997</text></g>
+<text x="36" y="351" font-size="19" font-weight="700">Denoising time / step · 20 steps</text><text x="36" y="389" font-size="18">Batch size</text><text x="295" y="389" font-size="18">2</text><text x="455" y="389" font-size="18">3</text><text x="615" y="389" font-size="18">4</text><text x="36" y="426" font-size="18">main = PR</text><text x="295" y="426" font-size="18">0.467 s</text><text x="455" y="426" font-size="18">0.715 s</text><text x="615" y="426" font-size="18">0.949 s</text><text x="36" y="479" font-size="16" fill="#53647b">Source: vllm-project/vllm-omni #10376 · SM120</text></g>
+</svg>

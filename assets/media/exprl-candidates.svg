@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" font-family="IBM Plex Mono, monospace">
+  <rect width="480" height="300" fill="#fafaf7"/>
+  <text x="24" y="34" font-size="14" font-weight="600" fill="#1d232a">价值网络 · 五选一</text>
+
+  <!-- drone start -->
+  <circle cx="70" cy="165" r="10" fill="#2456c9"/>
+  <text x="70" y="196" font-size="10" fill="#6b747d" text-anchor="middle">决策点</text>
+
+  <!-- 5 candidate paths -->
+  <g fill="none" stroke-width="2">
+    <path d="M80 165 C 150 90, 230 80, 300 70" stroke="#b9c0c6"/>
+    <path d="M80 165 C 150 120, 230 110, 300 112" stroke="#b9c0c6"/>
+    <path d="M80 165 C 160 160, 240 158, 320 160" stroke="#0f7b5a"/>
+    <path d="M80 165 C 150 210, 230 215, 300 210" stroke="#b9c0c6"/>
+    <path d="M80 165 C 150 245, 220 255, 300 258" stroke="#b9c0c6"/>
+  </g>
+
+  <!-- scores -->
+  <g font-size="11">
+    <rect x="300" y="58"  width="86" height="24" rx="4" fill="#f1f2f0" stroke="#b9c0c6"/><text x="343" y="74" fill="#6b747d" text-anchor="middle">前沿 0.42</text>
+    <rect x="300" y="100" width="86" height="24" rx="4" fill="#f1f2f0" stroke="#b9c0c6"/><text x="343" y="116" fill="#6b747d" text-anchor="middle">前沿 0.55</text>
+    <rect x="320" y="148" width="100" height="26" rx="4" fill="#e5f4ee" stroke="#0f7b5a"/><text x="370" y="166" fill="#0f7b5a" text-anchor="middle" font-weight="600">最高 0.88 ✓</text>
+    <rect x="300" y="198" width="86" height="24" rx="4" fill="#f1f2f0" stroke="#b9c0c6"/><text x="343" y="214" fill="#6b747d" text-anchor="middle">定向 0.31</text>
+    <rect x="300" y="246" width="86" height="24" rx="4" fill="#f1f2f0" stroke="#b9c0c6"/><text x="343" y="262" fill="#6b747d" text-anchor="middle">随机 0.19</text>
+  </g>
+
+  <text x="24" y="288" font-size="10" fill="#2456c9">交叉注意力价值网络 49 万参数 · 标签来自仿真真实飞行</text>
+</svg>

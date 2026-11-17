@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" font-family="IBM Plex Mono, monospace">
+  <rect width="480" height="300" fill="#fafaf7"/>
+  <text x="24" y="34" font-size="14" font-weight="600" fill="#1d232a">NMS · float4 向量装载</text>
+
+  <!-- scalar path -->
+  <text x="24" y="70" font-size="11" fill="#6b747d">逐标量读取 · 4 次访存</text>
+  <g>
+    <rect x="24" y="80" width="40" height="34" fill="#fbf0dc" stroke="#9a5a00"/>
+    <rect x="68" y="80" width="40" height="34" fill="#fbf0dc" stroke="#9a5a00"/>
+    <rect x="112" y="80" width="40" height="34" fill="#fbf0dc" stroke="#9a5a00"/>
+    <rect x="156" y="80" width="40" height="34" fill="#fbf0dc" stroke="#9a5a00"/>
+    <text x="44" y="102" font-size="11" fill="#9a5a00" text-anchor="middle">x</text>
+    <text x="88" y="102" font-size="11" fill="#9a5a00" text-anchor="middle">y</text>
+    <text x="132" y="102" font-size="11" fill="#9a5a00" text-anchor="middle">w</text>
+    <text x="176" y="102" font-size="11" fill="#9a5a00" text-anchor="middle">h</text>
+    <text x="210" y="102" font-size="18" fill="#9a5a00">×4</text>
+  </g>
+
+  <!-- vector path -->
+  <text x="24" y="156" font-size="11" fill="#6b747d">float4 向量装载 · 1 次访存</text>
+  <rect x="24" y="166" width="172" height="34" rx="4" fill="#e5f4ee" stroke="#0f7b5a"/>
+  <text x="110" y="188" font-size="11" fill="#0f7b5a" text-anchor="middle">[x, y, w, h] 一次读完</text>
+  <text x="210" y="188" font-size="18" fill="#0f7b5a">×1</text>
+
+  <!-- area precompute -->
+  <rect x="24" y="228" width="432" height="48" rx="6" fill="#ffffff" stroke="#e6e6df"/>
+  <text x="40" y="250" font-size="11" fill="#1d232a">面积预计算：IoU 两两比较不再重复算框面积</text>
+  <text x="40" y="268" font-size="11" fill="#2456c9">Mali-G57 / Adreno642L 满载 1.32–1.44× 加速</text>
+</svg>

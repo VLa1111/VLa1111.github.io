@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>混合长度组批 · 余奕辰</title>
-  <meta name="description" content="vLLM-Omni PR #9040 与 #10376：Qwen-Image-2.1 混合长度批次先丢了 CUDA Graph 吞吐，又暴露出输出漂移。从按长度组批，到定位图像 RoPE 位置随 padding 偏移并逐请求修复。">
+  <title>Qwen-Image 推理优化实践 · 余奕辰</title>
+  <meta name="description" content="从 issue #8586 的 Qwen-Image 推理优化需求出发，经由混合 batch 吞吐优化 PR #9040 和 RoPE 修复 PR #10376，延伸至 #10453 请求级准备数据管理计划。">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -63,8 +63,16 @@
       .loc .bar { grid-template-columns: 1fr; gap: 4px; }
       .loc .bar b { text-align: left; }
     }
+    .story-nav { display:flex; flex-wrap:wrap; gap:12px 24px; margin-top:28px; }
+    .story-nav a { font-size:14px; text-underline-offset:5px; }
+    .story-callout { padding:18px 22px; border-left:3px solid var(--accent); background:var(--paper); }
+    .technical-details { margin-top:28px; border:1px solid var(--line); border-radius:8px; padding:16px 22px; }
+    .technical-details summary { cursor:pointer; color:var(--accent); font-size:15px; }
+    .technical-details .step { padding:30px 0; }
+    .technical-details .step:last-child { border-bottom:0; }
+    .step { scroll-margin-top:80px; }
   </style>
-</head>
+<link rel="stylesheet" href="../assets/theme.css"><script src="../assets/theme.js"></script></head>
 <body>
   <header class="top">
     <a class="brand" href="../index.html">余奕辰</a>
@@ -77,25 +85,32 @@
 
   <main>
     <section class="hero">
-      <p class="kicker">VLLM-OMNI · QWEN-IMAGE-2.1 · PR #9040 + #10376 · 均为 OPEN</p>
-      <h1>Qwen-Image-2.1 混合长度组批的<br>吞吐优化与输出一致性修复。</h1>
-      <p class="lede">Qwen-Image-2.1 把布局相同的请求合批，prompt 长短不一时短请求需补 padding。#9040 消除 padding 导致 decode 丢失 CUDA Graph 的吞吐损失；#10376 定位并修复混合长度批次的输出漂移——图像 RoPE 位置随 padding 偏移。</p>
-      <p class="meta">1× RTX PRO 6000 · 1024² · 混合长度 images/s +6.4% / +5.1% · 输出漂移 PSNR 27.66 → 45.16 dB</p>
-      <div class="route">
-        <a href="#pr9040"><span class="mono">PR #9040 · 吞吐</span><b>padding 触发 CUDA Graph 回退</b><span>按 prompt 长度组批</span></a>
-        <i>→</i>
-        <a href="#drift"><span class="mono">对照输出</span><b>混合长度批次输出漂移</b><span>与 graph 回退无关</span></a>
-        <i>→</i>
-        <a href="#pr10376"><span class="mono">PR #10376 · 正确性</span><b>图像 RoPE 位置随 padding 偏移</b><span>逐请求计算帧位置</span></a>
-      </div>
+      <p class="kicker">VLLM-OMNI · QWEN-IMAGE-2.1 · 持续优化</p>
+      <h1>Qwen-Image 推理优化：<br>从混合 batch 吞吐到 RoPE 正确性。</h1>
+      <p class="lede">从社区性能优化需求出发，我选择混合 batch 作为切入点。在提升吞吐的过程中，输出对照又暴露了 RoPE 位置编码问题，由此形成 #9040 与 #10376 两个 PR。下一步计划参与请求级预计算数据的框架化管理。</p>
+      <nav class="story-nav" aria-label="项目进展">
+        <a href="#requirement">01 需求 #8586</a><a href="#pr9040">02 吞吐 #9040</a><a href="#pr10376">03 RoPE #10376</a><a href="#next">04 计划 #10453</a>
+      </nav>
     </section>
 
-    <p class="part" id="pr9040">PART 1 · PR #9040 · 先追吞吐</p>
+    <section class="step" id="requirement">
+      <p class="kicker">01 · 社区需求 / ISSUE #8586</p>
+      <h2>Qwen-Image-2.1 已支持推理，下一步是提高服务效率。</h2>
+      <p><a href="https://github.com/vllm-project/vllm-omni/issues/8586">社区优化任务 #8586</a>提出低延迟、高吞吐和显存效率三个方向。我参与其中的 B2：剖析不同 prompt 长度、参考图数量与尺寸的编辑 batch，减少 padding、packing 和 sub-batch 开销，同时保持请求顺序与条件隔离。</p>
+      <p class="story-callout"><b>这条工作的目标：</b>在并发下最大化成功 images/s，并同时报告 p50 / p95 / p99 延迟及失败情况。下文两个 PR 分别处理吞吐瓶颈与测试中发现的正确性问题，尚不代表整个优化任务完成。</p>
+    </section>
 
-    <section class="step" style="padding-top:20px">
-      <p class="kicker">01 · padding 从哪里来</p>
+    <section class="step" id="pr9040">
+      <p class="kicker">02 · 切入混合 BATCH / PR #9040</p>
+      <h2>按 prompt 长度分组，减少 padding 引起的 CUDA Graph 回退。</h2>
+      <p>Profiling 发现，相同参考图布局的请求仍可能有不同文本长度。合批后短 prompt 需要 padding，main 日志记录了 padded-text-mask eager fallback，decode 无法使用 CUDA Graph。</p>
+      <p>我在 batch compatibility key 中加入模板化后的 positive token 数；true CFG 下同时加入 negative token 数。等长请求仍可合批，eager 与 graph-disabled 路径保留原有规则。<a href="https://github.com/vllm-project/vllm-omni/pull/9040">查看 PR #9040 ↗</a></p>
+      <p class="story-callout"><b>结果：</b>混合长度 0-ref / 1-ref 吞吐分别提高 <b>6.4% / 5.1%</b>，同长度对照下降 1.2%。main 与 PR 各 12/12 请求成功。两轮小样本仅支持局部吞吐结论，不能评估 p95/p99 尾延迟。</p>
+      <figure class="evidence-figure"><a href="../assets/media/pr9040-throughput.svg" target="_blank" rel="noreferrer"><img src="../assets/media/pr9040-throughput.svg" alt="PR 9040 H1、L0、L1 两轮吞吐对比" loading="lazy"></a><figcaption>1× RTX PRO 6000 · BF16 · 1024² · 50 步 · 每组 2 个请求，预热后两轮；三图共用纵轴。由 PR 测量表重绘 · 点击查看原图</figcaption></figure>
+      <details class="technical-details"><summary>展开实现与测量：padding、兼容性分组和逐组结果</summary>    <section class="step" style="padding-top:20px">
+      <p class="kicker">01 · 性能瓶颈：padding 触发 eager 回退</p>
       <h2>合批要求文本张量等长，短 prompt 左侧补 padding。</h2>
-      <p>目标是在并发下提高成功生成的 images/s。同一批请求的文本张量要对齐形状。长度一致时，decode 可以走预先捕获的 CUDA Graph；只要出现 padding，main 的日志就记录一次 padded-text-mask eager 回退。拖动滑块改变请求 B 的长度。</p>
+      <p>同一批请求的文本张量需要对齐形状，短 prompt 因而需要 padding。本次混合长度测试中，main 日志记录了 padded-text-mask eager fallback：带 padding 的文本掩码使 decode 无法使用 CUDA Graph。优化切入点是调整合批条件，减少这种回退。下方可改变请求 B 的长度，观察 padding 的变化；token 数为示意。</p>
       <div class="panel">
         <div class="slider">
           <span>B 的 token 数</span>
@@ -108,11 +123,10 @@
         <p class="caption">蓝色是真实 token，斜纹是 padding。token 数为示意。</p>
       </div>
     </section>
-
     <section class="step">
-      <p class="kicker">02 · 改的是组批的 key</p>
+      <p class="kicker">02 · 实现：长度感知的合批条件</p>
       <h2>prompt 长度纳入合批兼容性 key，等长请求仍然合批。</h2>
-      <p>没有重写调度器，只改了判断“哪些请求能放进同一批”的 key。开启 true CFG 时，negative prompt 的长度也要一致。graph 关闭或拿不到 tokenizer 时，退回原来不看长度的组批，因为这些情况下本来就不走 graph。切换选项，看 6 个请求怎么分组。</p>
+      <p>在现有 batch compatibility key 中加入模板化后的 positive prompt token 数；启用 true CFG 时，同时加入 negative prompt token 数。准入检查与实际编码复用同一套 prompt 模板，避免长度估计不一致。eager、graph-disabled 或 tokenizer 不可用时保留原有组批规则，negative prompt 是否存在仍参与兼容性判断。请求顺序由现有调度器保持。</p>
       <div class="panel">
         <div class="seg" role="group" aria-label="版本">
           <button type="button" data-ver="main" aria-pressed="true">main</button>
@@ -128,11 +142,10 @@
         <p class="caption">请求与长度为示意；分组规则与 PR 描述一致。请求顺序由原有调度器保持。</p>
       </div>
     </section>
-
     <section class="step">
       <p class="kicker">03 · 实测吞吐</p>
-      <h2>混合长度组吞吐提升，等长对照组持平。</h2>
-      <p>每组 2 个请求，main 与 PR 各跑 1 次预热和 2 次正式测量，吞吐 = 完成图片数 / 墙钟时间。12 / 12 个请求全部完成，54 个针对性兼容测试通过。只有两次测量，只支持局部结论。</p>
+      <h2>混合长度组吞吐提高 5.1%–6.4%，等长对照下降 1.2%。</h2>
+      <p>对比 main@b164fea7 与 PR 实现 9b685758，使用相同模型、输入与服务配置：1× RTX PRO 6000、BF16、1024²、50 步、max_num_seqs=4、batch wait=500 ms。每组包含 2 个请求，预热后测量两轮，吞吐按成功图片数除以组内墙钟时间计算。两侧各 12/12 请求成功，PR 的 54 项兼容性测试通过。该小样本对照尚不足以评估 p95/p99 尾延迟。</p>
       <div class="panel">
         <div class="seg" role="group" aria-label="测试组">
           <button type="button" data-cell="L0" aria-pressed="true">L0 · 混合 / 0 参考图</button>
@@ -147,12 +160,21 @@
         <p class="verdict" id="rNote"></p>
         <p class="caption" id="rWall"></p>
       </div>
+    </section></details>
     </section>
 
-    <section class="step" id="drift">
+    <section class="step" id="pr10376">
+      <p class="kicker">03 · 从性能验证发现正确性问题 / PR #10376</p>
+      <h2>吞吐对照中出现输出差异，进一步定位到图像 RoPE 帧位置。</h2>
+      <p id="drift">验证 #9040 时，同长度组输出逐像素一致，混合长度组却有可重复差异。L0 的 PR 输出与独立串行参考图哈希一致，提示问题与混合 batch 上下文有关。eager 模式仍允许混合长度合批，因此需要独立定位和修复。</p>
+      <p>固定同一请求 R，仅改变同批其他 prompt 的长度后发现：整批共享的 RoPE 表让 R 的图像帧位置随最长文本变化，由 17 变为 64。消融实验排除了编码器输出和注意力掩码路径；我在 #10376 中按各请求的有效文本长度修正帧位置，保留混合合批能力。<a href="https://github.com/vllm-project/vllm-omni/pull/10376">查看 PR #10376 ↗</a></p>
+      <p class="story-callout"><b>结果：</b>50 步等长与混合长度批次的 PSNR 从 <b>27.66 提高到 45.16 dB</b>，SSIM 从 0.964 提高到 0.997。批大小 2/3/4 的测试均改善，已测 SM120 配置下去噪每步耗时相同。</p>
+      <figure class="evidence-figure"><a href="../assets/pr10376/fig4_diff_heatmap.png" target="_blank" rel="noreferrer"><img src="../assets/pr10376/fig4_diff_heatmap.png" alt="PR 10376 修复前后逐像素差分" loading="lazy"></a><figcaption>同一请求 R 在等长与混合长度 batch 中的像素绝对差，平均值 6.15 → 0.74。两图使用相同 0–64 截断色标，原像素范围为 0–255 · 点击查看原图</figcaption></figure>
+      <figure class="evidence-figure"><a href="../assets/pr10376/fig5_batch_size_drift_speed.png" target="_blank" rel="noreferrer"><img src="../assets/pr10376/fig5_batch_size_drift_speed.png" alt="批大小变化时的 PSNR 和去噪每步耗时" loading="lazy"></a><figcaption>20 步 · 1024² · 每点 4 个 wave。左：相对等长参照的 PSNR；右：去噪每步耗时，非端到端请求延迟 · 点击查看原图</figcaption></figure>
+      <details class="technical-details"><summary>展开定位过程：复现图、RoPE 机制、消融与测试边界</summary>    <section class="step">
       <p class="kicker">04 · 对照输出时发现的问题</p>
-      <h2>分组后输出与 main 不一致，漂移源自 main 的混合长度批次。</h2>
-      <p>按理说组批方式不该改变每个请求的结果。但等长组 H1 逐像素一致，混合长度组的输出却和 main 有明显差异。#9040 的 L0 输出与单独串行生成的参考图 SHA-256 一致，说明 #9040 给的是“对的”结果，偏掉的是 main 上的混合长度批次：同一个请求的输出，会随同批的其他请求变化。</p>
+      <h2>同长度对照输出一致，混合长度输出存在可重复差异。</h2>
+      <p>H1 的 4 对输出逐像素一致；L0 和 L1 则出现可重复的图像差异。L0 的 PR 输出与独立串行参考图 SHA-256 一致，支持这些输入上的差异来自 main 的混合长度批次上下文。这项检查验证了已测输入的请求映射与参考一致性，不代表普遍的图像质量保证。</p>
       <div class="panel">
         <div class="scroll">
           <table>
@@ -166,17 +188,19 @@
             </tbody>
           </table>
         </div>
+        <div class="imgs" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:24px">
+          <figure><a href="../assets/media/pr9040-main-L0-short.png" target="_blank" rel="noreferrer"><img src="../assets/media/pr9040-main-L0-short.png" alt="main 的 L0 短 prompt 在混合长度批次中的输出" loading="lazy"></a><figcaption>main · L0 短 prompt · 混合长度批次</figcaption></figure>
+          <figure><a href="../assets/media/pr9040-serial-L0-short.png" target="_blank" rel="noreferrer"><img src="../assets/media/pr9040-serial-L0-short.png" alt="L0 短 prompt 的独立串行参考输出，其 SHA-256 与 PR 输出一致" loading="lazy"></a><figcaption>独立串行参考 · 已核验与 #9040 输出 SHA-256 一致</figcaption></figure>
+        </div>
+        <p class="caption">L0 短 prompt 的输出对照，PSNR 28.77 dB。右侧使用已存档的串行参考图；不将该案例推导为普遍准确率结论。点击可查看原图。</p>
         <div class="bridge">
-          <b>#9040 只是绕开了它</b>
-          #9040 只对能走 CUDA Graph 的批次按长度分组。eager 执行时，长短 prompt 仍会进同一批，漂移照样发生（issue #10374）。分组能避开问题，但混合长度批次本身为什么会错，还没有答案。
+          <b>#9040 与 #10376 的处理范围</b>
+          #9040 在 graph-eligible 路径按长度分组，避免了混合长度带来的影响；eager 路径仍允许长短 prompt 合批，issue #10374 中的输出漂移因此需要独立处理。#10376 进一步定位并修正批次内每个请求的位置编码。
         </div>
       </div>
     </section>
-
-    <p class="part" id="pr10376">PART 2 · PR #10376 · 再追正确性</p>
-
     <section class="step" style="padding-top:20px">
-      <p class="kicker">05 · 把现象固定下来</p>
+      <p class="kicker">05 · 复现：固定请求，改变批次组成</p>
       <h2>等长批次输出接近，混合长度批次明显漂移。</h2>
       <p>在 eager 服务下固定请求 R 的 prompt、seed 和参数，分别单独运行、放进 3 个等长 prompt 的批次 (wave B)、放进带两个更长 prompt 的批次 (wave C)。调度日志确认两个 wave 都是真实的 3 请求批次。PSNR 都是和单独运行比。</p>
       <div class="panel">
@@ -185,14 +209,13 @@
           <figure><img src="../assets/pr10376/01_R_same_length_batch_50steps.jpg" alt="请求 R 在等长批次中的输出" loading="lazy"><figcaption>wave B · 等长批<br><b>43.99 dB</b></figcaption></figure>
           <figure><img src="../assets/pr10376/02_R_mixed_length_batch_50steps.jpg" alt="请求 R 在混合长度批次中的输出" loading="lazy"><figcaption>wave C · 混合长度批<br><b class="bad">27.94 dB</b></figcaption></figure>
         </div>
-        <p class="caption">图片来自 PR 描述，50 步。等长批与单独运行的 43.99 dB 是批处理本身带来的正常数值差。</p>
+        <p class="caption">图片来自 PR 描述，50 步。本次测试中，等长批与单独运行的 PSNR 为 43.99 dB，作为批处理数值差异的参照。</p>
       </div>
     </section>
-
     <section class="step">
       <p class="kicker">06 · 根因</p>
       <h2>图像 RoPE 帧位置，随整批 padding 后的文本长度偏移。</h2>
-      <p>RoPE 给每个 token 编码位置。<code>QwenImage21Rope.forward</code> 为整批只建一张表：文本 token 推进一个共享的位置计数，图像块的帧轴位置从它接着算。文本按整批最长的 prompt 左侧补齐——和第一部分里拖垮 CUDA Graph 的是同一份 padding——R 的 17 个文本 token 前面多了 47 个 padding，图像的帧位置从 17 被推到 64。</p>
+      <p>RoPE 给每个 token 编码位置。<code>QwenImage21Rope.forward</code> 为整批只建一张表：文本 token 推进一个共享的位置计数，图像块的帧轴位置从它接着算。文本按整批最长的 prompt 左侧补齐。R 的 17 个文本 token 前面多了 47 个 padding，图像的帧位置由 17 变为 64，导致位置编码依赖其他请求的文本长度。</p>
       <div class="panel">
         <div class="seg" role="group" aria-label="批次">
           <button type="button" data-w="B" aria-pressed="true">wave B · 等长批</button>
@@ -205,18 +228,16 @@
         <p class="caption">斜纹是 padding，蓝色是 R 的文本，绿色是 R 的图像 token。长度按比例示意。</p>
       </div>
     </section>
-
     <section class="step">
-      <p class="kicker">07 · 怎么确认是它</p>
-      <h2>逐项消除批次间差异，定位触发漂移的那一项。</h2>
+      <p class="kicker">07 · 消融实验：定位 RoPE 位置偏移</p>
+      <h2>修正图像帧位置后，第一层注意力输出差异显著下降。</h2>
       <p>批次之间不只 RoPE 不同：文本编码器的输出、DiT 注意力掩码的路径也会变。在 8 步去噪下依次消掉这些差异，每一步都测 R 在 wave B 与 wave C 之间的 PSNR。</p>
       <div class="panel loc">
         <div class="bars" id="locBars"></div>
-        <p class="verdict">让文本编码器输出完全一致、让两批走同一条注意力掩码路径，都没有变化；把 R 的图像帧位置放回 17，漂移基本消失，第一层 DiT 注意力输出的平均绝对差从 0.375 降到 0.0017。</p>
+        <p class="verdict">统一文本编码器输出、统一注意力掩码执行路径后，漂移未改善。将 R 的图像帧位置恢复为 17 后，第一层 DiT 注意力输出的平均绝对差由 0.375 降至 0.0017，支持将根因定位到图像 RoPE 帧位置。</p>
         <p class="caption">条形只表示定性结论，逐步 PSNR 见 PR 原图。“硬编码位置”只对这一批里的 R 正确，会让更长的请求拿到错误位置，所以它是诊断，不是修复。</p>
       </div>
     </section>
-
     <section class="step">
       <p class="kicker">08 · 修复</p>
       <h2>按各请求自身 padding 回退帧位置，RoPE 表改为逐请求计算。</h2>
@@ -234,14 +255,13 @@ prefix / target 的切分与拼接改用序列维 (−2)</div>
           <span class="node hit">文本有 padding</span><span class="arrow">→</span>
           <span class="node">逐请求 RoPE</span>
         </div>
-        <p class="verdict">只有同时满足这四个条件才走新路径；等长批、单请求、序列并行和非 CUDA 设备仍用原来的二维表。和 #9040 的分工是：#9040 让能走 graph 的批次不混长度、换回吞吐；#10376 让仍然混在一起的批次算对，不减少合批，也不依赖 #9040。</p>
+        <p class="verdict">只有同时满足这四个条件才走新路径；等长批、单请求、序列并行和非 CUDA 设备仍用原来的二维表。和 #9040 的分工是：#9040 调整 graph-eligible 请求的兼容性分组；#10376 修正混合长度批次的逐请求位置编码，保留原有合批能力，并可独立使用。</p>
       </div>
     </section>
-
     <section class="step">
       <p class="kicker">09 · 结果</p>
-      <h2>漂移回到正常批处理水平，每步耗时不变。</h2>
-      <p>50 步时，R 在等长批与混合长度批之间的 PSNR 从 27.66 dB 升到 45.16 dB，SSIM 0.964 → 0.997，略高于单独运行和等长批之间本来就有的 43.99 dB。</p>
+      <h2>输出一致性提高，已测配置的去噪每步耗时相同。</h2>
+      <p>50 步时，R 在等长批与混合长度批之间的 PSNR 从 27.66 dB 升到 45.16 dB，SSIM 0.964 → 0.997，与本次单请求和等长批之间的 43.99 dB 参照接近。</p>
       <div class="panel">
         <div class="seg" role="group" aria-label="版本">
           <button type="button" data-v="main" aria-pressed="true">main</button>
@@ -253,7 +273,7 @@ prefix / target 的切分与拼接改用序列维 (−2)</div>
         </div>
         <p class="delta" id="vRes"></p>
       </div>
-      <p style="margin-top:28px">再换批大小。20 步，每个点 4 个 wave（main 和 #10376 在两张卡上并行，再交换卡重跑），52 个请求全部成功。漂移是 R 相对同次运行中等长批 R 的 PSNR。</p>
+      <p style="margin-top:28px">进一步验证批大小变化：20 步，每个测试点包含 4 个 wave（main 和 #10376 在两张卡上并行，再交换卡重跑），52 个请求全部成功。漂移是 R 相对同次运行中等长批 R 的 PSNR。</p>
       <div class="panel">
         <div class="seg" role="group" aria-label="指标">
           <button type="button" data-m="psnr" aria-pressed="true">漂移 PSNR</button>
@@ -265,7 +285,6 @@ prefix / target 的切分与拼接改用序列维 (−2)</div>
         <p class="verdict" id="bsNote"></p>
       </div>
     </section>
-
     <section class="step">
       <p class="kicker">10 · 验证与边界</p>
       <h2>两个 PR 的测试覆盖，与尚未验证的边界。</h2>
@@ -279,14 +298,17 @@ prefix / target 的切分与拼接改用序列维 (−2)</div>
           <li>#10376 输出明显更接近，但不是逐位批不变；速度在 SM120 上测量，SM103 + PyTorch 2.13 上混合长度批会失去融合 RoPE kernel，未测；未测图像编辑、true CFG、CUDA Graph 服务、序列并行、非 CUDA 设备。</li>
         </ul>
       </div>
+    </section></details>
     </section>
 
-    <section class="contact">
-      <a class="back" href="../index.html">← 返回经历</a>
-      <a class="back" href="vae-tiling.html">#7774 显存排查 →</a>
-      <a class="back" href="https://github.com/vllm-project/vllm-omni/pull/9040" target="_blank" rel="noreferrer">打开 PR #9040 ↗</a>
-      <a class="back" href="https://github.com/vllm-project/vllm-omni/pull/10376" target="_blank" rel="noreferrer">打开 PR #10376 ↗</a>
+    <section class="step" id="next">
+      <p class="kicker">04 · 后续计划 / ISSUE #10453 · 尚未实现</p>
+      <h2>将 Qwen-Image 的请求级准备数据接入共享生命周期。</h2>
+      <p><a href="https://github.com/vllm-project/vllm-omni/issues/10453">#10453</a>提出由框架统一管理 prepared denoise inputs。我计划参与 Qwen-Image2.1 部分，将已有请求级 geometry/metadata 的准备、失效和清理接入共享机制，并保留 prefix-KV 语义、平台 kernel 和独立的 decode-graph 生命周期。</p>
+      <p>验证重点是 batch 重排、请求交错、CFG 分支、取消和图重放时的数据有效性与释放。共享 modulation 属于 step 级数据，不能跨时间步作为请求常量复用。迁移先与最新优化基线验证一致性，再单独测量绑定开销、延迟和显存；目前没有可报告的新收益。</p>
+      <p class="story-callout">这条路线从混合 batch 的具体性能瓶颈，推进到逐请求的位置语义，再延伸到准备数据的框架化管理。</p>
     </section>
+    <section class="contact"><a class="back" href="../index.html">← 返回个人主页</a><a class="back" href="https://github.com/vllm-project/vllm-omni/issues/8586">需求 #8586 ↗</a><a class="back" href="https://github.com/vllm-project/vllm-omni/issues/10453">后续 #10453 ↗</a></section>
   </main>
 
   <footer>© 2026 余奕辰</footer>
@@ -348,9 +370,9 @@ prefix / target 的切分与拼接改用序列维 (−2)</div>
 
     // 03 throughput (images/s, mean of 2 passes)
     const CELLS = {
-      L0: { main: [0.0870, 0.0868], pr: [0.0921, 0.0928], wm: '23.00 / 23.04', wp: '21.71 / 21.54', d: '+6.4%', note: '混合长度、纯文生图：padding 回退被消除，提升最明显。' },
-      L1: { main: [0.0757, 0.0754], pr: [0.0794, 0.0794], wm: '26.41 / 26.51', wp: '25.18 / 25.20', d: '+5.1%', note: '混合长度、带 1 张参考图：同样受益。' },
-      H1: { main: [0.0814, 0.0811], pr: [0.0804, 0.0802], wm: '24.58 / 24.65', wp: '24.87 / 24.92', d: '−1.2%', note: '等长对照组：本来就不 padding，改动不应带来收益，结果在小幅波动范围内。' }
+      L0: { main: [0.0870, 0.0868], pr: [0.0921, 0.0928], wm: '23.00 / 23.04', wp: '21.71 / 21.54', d: '+6.4%', note: '混合长度、纯文生图：PR 日志记录了分离后 prompt 形状的 decode graph capture，平均吞吐提高 6.4%。' },
+      L1: { main: [0.0757, 0.0754], pr: [0.0794, 0.0794], wm: '26.41 / 26.51', wp: '25.18 / 25.20', d: '+5.1%', note: '混合长度、带 1 张参考图：平均吞吐提高 5.1%。' },
+      H1: { main: [0.0814, 0.0811], pr: [0.0804, 0.0802], wm: '24.58 / 24.65', wp: '24.87 / 24.92', d: '−1.2%', note: '等长对照组：没有文本 padding，本次吞吐下降 1.2%；两轮测量不足以判断统计显著性。' }
     };
     function setCell(k) {
       const c = CELLS[k], avg = a => (a[0] + a[1]) / 2, top = 0.095, m = avg(c.main), p = avg(c.pr);
@@ -422,7 +444,7 @@ prefix / target 的切分与拼接改用序列维 (−2)</div>
         : `<tr><td>${n}</td><td class="num">${s1.toFixed(3)} s</td><td class="num">${s2.toFixed(3)} s</td></tr>`).join('');
       $('bsNote').textContent = m === 'psnr'
         ? '批大小 2、3、4 下修复都成立，4 个 wave、两张卡之间结果一致。'
-        : '去噪循环每步耗时完全相同；整批墙钟时间差异在 ±0.07 s 内。';
+        : '当前显示精度下，去噪每步耗时相同；整批墙钟时间差异在 ±0.07 s 内。';
     }
     bindSeg('m', setM);
     setM('psnr');

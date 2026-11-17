@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" font-family="IBM Plex Mono, monospace">
+  <rect width="480" height="300" fill="#fafaf7"/>
+  <text x="24" y="34" font-size="14" font-weight="600" fill="#1d232a">VLM 版本 · 轮间偏好闭环</text>
+
+  <defs>
+    <marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0 0 L6 3 L0 6 Z" fill="#6b747d"/>
+    </marker>
+  </defs>
+
+  <!-- four nodes in a cycle -->
+  <g font-size="11" text-anchor="middle">
+    <rect x="60"  y="70"  width="130" height="44" rx="6" fill="#dce7fb" stroke="#2456c9"/>
+    <text x="125" y="97" fill="#2456c9">观测 RGB 关键帧</text>
+
+    <rect x="290" y="70"  width="130" height="44" rx="6" fill="#e5f4ee" stroke="#0f7b5a"/>
+    <text x="355" y="90" fill="#0f7b5a">VLM 区域偏好</text>
+    <text x="355" y="106" fill="#0f7b5a" font-size="9">Qwen3-VL-2B</text>
+
+    <rect x="290" y="186" width="130" height="44" rx="6" fill="#ffffff" stroke="#e6e6df"/>
+    <text x="355" y="206" fill="#1d232a">选轨融合</text>
+    <text x="355" y="222" fill="#6b747d" font-size="9">几何分 + 语义分</text>
+
+    <rect x="60"  y="186" width="130" height="44" rx="6" fill="#ffffff" stroke="#e6e6df"/>
+    <text x="125" y="213" fill="#1d232a">执行 → 新观测</text>
+  </g>
+
+  <!-- arrows -->
+  <g stroke="#6b747d" stroke-width="1.6" fill="none">
+    <line x1="190" y1="92"  x2="286" y2="92"  marker-end="url(#ah)"/>
+    <line x1="355" y1="114" x2="355" y2="182" marker-end="url(#ah)"/>
+    <line x1="290" y1="208" x2="194" y2="208" marker-end="url(#ah)"/>
+    <line x1="125" y1="186" x2="125" y2="118" marker-end="url(#ah)"/>
+  </g>
+
+  <text x="24" y="276" font-size="10" fill="#6b747d">快环（几何，约 10 Hz）照常跑；慢环每轮给一次偏好</text>
+  <text x="24" y="292" font-size="10" fill="#2456c9">向量缺失或过期 → 退回纯几何排序</text>
+</svg>
