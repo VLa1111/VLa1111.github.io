@@ -98,7 +98,7 @@
 
             </figure>
             <figure class="media">
-              <a href="experiences/qwen-image-2-1.html#pr10376">
+              <a href="experiences/qwen-image-2-1.html">
                 <img src="assets/pr10376/fig4_diff_heatmap.png" alt="RoPE 修复前后的逐像素差分，平均绝对差从 6.15 降至 0.74" loading="lazy">
               </a>
             </figure>
@@ -120,7 +120,7 @@
                 Boogu-Image: 消费级显卡运行 34.6 GB权重文生图模型，modelwise / layerwise CPU offload，显存峰值压缩至 11.5 GiB。
               </li>
               <li>
-                <div class="pr-head"><strong>Qwen-Image-2.1</strong><a href="experiences/qwen-image-2-1.html#pr9040">#9040</a><a href="experiences/qwen-image-2-1.html#pr10376">#10376</a></div>
+                <div class="pr-head"><strong>Qwen-Image-2.1</strong><a href="experiences/qwen-image-2-1.html">#9040</a><a href="experiences/qwen-image-2-1.html">#10376</a></div>
                 按 prompt 长度分组，两组混合长度负载的吞吐分别提升 6.4% 和 5.1%。验证中发现 RoPE 位置偏移，改为逐请求计算后，批次间输出的 PSNR 从 27.66 升至 45.16 dB。
               </li>
             </ul>
@@ -197,13 +197,16 @@
           <div class="media-col">
             <figure class="media">
               <a href="experiences/research.html">
-                <img src="assets/media/exprl-candidates.svg" alt="五条候选路径价值评分示意" loading="lazy">
+                <img src="assets/exprl/01-four-scenes.webp" alt="Isaac Sim 无人机探索训练场景总览" loading="lazy">
               </a>
 
             </figure>
             <figure class="media">
-              <a href="experiences/exprl-vlm.html">
-                <img src="assets/media/exprl-loop.svg" alt="观测到偏好的闭环示意" loading="lazy">
+              <a href="experiences/research.html">
+                <picture>
+                  <source srcset="assets/exprl/training-poster.jpg" media="(prefers-reduced-motion: reduce)">
+                  <img src="assets/exprl/training-preview.gif" width="448" height="252" alt="56 个 Isaac Sim 训练环境的动态预览，含障碍场和迷宫中的无人机近景" loading="lazy">
+                </picture>
               </a>
 
             </figure>
@@ -211,15 +214,15 @@
           <div class="entry-body">
             <p class="entry-kicker">2026.04 — 至今</p>
             <h3>ExpRL · 基于自监督价值预训练的无人机自主探索</h3>
-            <p class="role">科研项目 · 决策模型 · 数采框架 · 端侧部署</p>
+            <!-- <p class="role">科研项目 · 决策模型 · 数采框架 · 端侧部署</p> -->
             <p class="desc">将候选轨迹评分、仿真数据采集和推理部署串联为完整决策链路，同时验证探索覆盖率与决策耗时。</p>
             <ul class="bullets">
-              <li>地图空间 token + 候选路径 query 的交叉注意力价值网络（49 万参数），带可学习衰减的决策历史；Isaac Sim 6 场景平均覆盖率 92.8%。</li>
-              <li>Isaac Sim 多卡并行采集（16 worker × 8 env），累计 8960 条链式标签样本，0 条审计剔除。</li>
-              <li>GPU 栅格化 + TensorRT + CUDA Graph 捕获整条决策链路，单决策 4.21 → 0.454 ms，闭环选择零失配。</li>
+              <li>地图空间 token + 候选路径 query 的交叉注意力价值网络，带可学习衰减的决策历史；Isaac Sim 6 场景平均覆盖率 92.8%。</li>
+              <li>Isaac Sim 多卡并行采集（16 worker × 8 env），累计 8960 条链式标签样本。</li>
+              <li>GPU 栅格化 + TensorRT + CUDA Graph 捕获整条决策链路，单决策 4.21 → 0.454 ms。</li>
             </ul>
             <p class="links">
-              <a href="experiences/research.html">查看详情</a>
+              <a href="experiences/research.html">查看详情与训练视频</a>
               <!-- <a href="experiences/exprl-vlm.html">VLM 版本</a> -->
             </p>
           </div>

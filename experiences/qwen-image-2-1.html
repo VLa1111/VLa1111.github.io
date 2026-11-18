@@ -66,6 +66,8 @@
     .story-nav { display:flex; flex-wrap:wrap; gap:12px 24px; margin-top:28px; }
     .story-nav a { font-size:14px; text-underline-offset:5px; }
     .story-callout { padding:18px 22px; border-left:3px solid var(--accent); background:var(--paper); }
+    .pr-subheading { margin: 24px 0 8px; font-size: 18px; }
+    .pr-subheading + p { margin-top: 0; }
     .technical-details { margin-top:28px; border:1px solid var(--line); border-radius:8px; padding:16px 22px; }
     .technical-details summary { cursor:pointer; color:var(--accent); font-size:15px; }
     .technical-details .step { padding:30px 0; }
@@ -86,26 +88,30 @@
   <main>
     <section class="hero">
       <p class="kicker">VLLM-OMNI · QWEN-IMAGE-2.1 · 持续优化</p>
-      <h1>Qwen-Image 推理优化：<br>从混合 batch 吞吐到 RoPE 正确性。</h1>
-      <p class="lede">从社区性能优化需求出发，我选择混合 batch 作为切入点。在提升吞吐的过程中，输出对照又暴露了 RoPE 位置编码问题，由此形成 #9040 与 #10376 两个 PR。下一步计划参与请求级预计算数据的框架化管理。</p>
+      <h1>Qwen-Image推理优化：<br>从混合batch吞吐到 RoPE 一致性。</h1>
+      <p class="lede">从Qwen-image推理性能优化需求出发，以混合 batch 为切入点。在提升吞吐的过程中，输出对照又暴露了 RoPE 位置编码问题，形成 #9040 与 #10376 两个 PR</p>
       <nav class="story-nav" aria-label="项目进展">
-        <a href="#requirement">01 需求 #8586</a><a href="#pr9040">02 吞吐 #9040</a><a href="#pr10376">03 RoPE #10376</a><a href="#next">04 计划 #10453</a>
+        <a href="#requirement">01 需求 #8586</a><a href="#pr9040">02 吞吐 #9040</a><a href="#pr10376">03 RoPE #10376</a>
       </nav>
     </section>
 
     <section class="step" id="requirement">
       <p class="kicker">01 · 社区需求 / ISSUE #8586</p>
       <h2>Qwen-Image-2.1 已支持推理，下一步是提高服务效率。</h2>
-      <p><a href="https://github.com/vllm-project/vllm-omni/issues/8586">社区优化任务 #8586</a>提出低延迟、高吞吐和显存效率三个方向。我参与其中的 B2：剖析不同 prompt 长度、参考图数量与尺寸的编辑 batch，减少 padding、packing 和 sub-batch 开销，同时保持请求顺序与条件隔离。</p>
-      <p class="story-callout"><b>这条工作的目标：</b>在并发下最大化成功 images/s，并同时报告 p50 / p95 / p99 延迟及失败情况。下文两个 PR 分别处理吞吐瓶颈与测试中发现的正确性问题，尚不代表整个优化任务完成。</p>
+      <p><a href="https://github.com/vllm-project/vllm-omni/issues/8586">社区优化任务 #8586</a>提出低延迟、高吞吐和显存效率三个方向。我参与其中的高吞吐优化：剖析不同 prompt 长度、参考图数量与尺寸的编辑 batch，减少 padding、packing 和 sub-batch 开销，同时保持请求顺序与条件隔离。</p>
+      <p class="story-callout"><b>预期目标：</b>在并发下最大化成功 images/s，并同时报告 p50 / p95 / p99 延迟及失败情况。</p>
     </section>
 
     <section class="step" id="pr9040">
       <p class="kicker">02 · 切入混合 BATCH / PR #9040</p>
       <h2>按 prompt 长度分组，减少 padding 引起的 CUDA Graph 回退。</h2>
+      <h3 class="pr-subheading">问题</h3>
       <p>Profiling 发现，相同参考图布局的请求仍可能有不同文本长度。合批后短 prompt 需要 padding，main 日志记录了 padded-text-mask eager fallback，decode 无法使用 CUDA Graph。</p>
-      <p>我在 batch compatibility key 中加入模板化后的 positive token 数；true CFG 下同时加入 negative token 数。等长请求仍可合批，eager 与 graph-disabled 路径保留原有规则。<a href="https://github.com/vllm-project/vllm-omni/pull/9040">查看 PR #9040 ↗</a></p>
-      <p class="story-callout"><b>结果：</b>混合长度 0-ref / 1-ref 吞吐分别提高 <b>6.4% / 5.1%</b>，同长度对照下降 1.2%。main 与 PR 各 12/12 请求成功。两轮小样本仅支持局部吞吐结论，不能评估 p95/p99 尾延迟。</p>
+      <h3 class="pr-subheading">方法 · 启用 CUDA Graph 时，按 prompt 长度分组</h3>
+      <p>在原有合批条件上加：模型实际读到的 prompt 必须有相同的 token 数。比如 24 和 56 个 token 的请求分开执行，两个 24 token 的请求仍可合批，避免为对齐长度补 padding。</p>
+      <p>CFG（无分类器引导）用来引导生成结果。启用 true CFG 时，模型还会处理负向 prompt。关闭 CUDA Graph 或无法计算 token 数时，沿用原分组规则。</p>
+      <h3 class="pr-subheading">结论</h3>
+      <p class="story-callout">混合长度 0-ref / 1-ref 吞吐分别提高 <b>6.4% / 5.1%</b>，同长度对照下降 1.2%。main 与 PR 各 12/12 请求成功。<a href="https://github.com/vllm-project/vllm-omni/pull/9040">查看 PR #9040 ↗</a></p>
       <figure class="evidence-figure"><a href="../assets/media/pr9040-throughput.svg" target="_blank" rel="noreferrer"><img src="../assets/media/pr9040-throughput.svg" alt="PR 9040 H1、L0、L1 两轮吞吐对比" loading="lazy"></a><figcaption>1× RTX PRO 6000 · BF16 · 1024² · 50 步 · 每组 2 个请求，预热后两轮；三图共用纵轴。由 PR 测量表重绘 · 点击查看原图</figcaption></figure>
       <details class="technical-details"><summary>展开实现与测量：padding、兼容性分组和逐组结果</summary>    <section class="step" style="padding-top:20px">
       <p class="kicker">01 · 性能瓶颈：padding 触发 eager 回退</p>
@@ -164,11 +170,14 @@
     </section>
 
     <section class="step" id="pr10376">
-      <p class="kicker">03 · 从性能验证发现正确性问题 / PR #10376</p>
-      <h2>吞吐对照中出现输出差异，进一步定位到图像 RoPE 帧位置。</h2>
-      <p id="drift">验证 #9040 时，同长度组输出逐像素一致，混合长度组却有可重复差异。L0 的 PR 输出与独立串行参考图哈希一致，提示问题与混合 batch 上下文有关。eager 模式仍允许混合长度合批，因此需要独立定位和修复。</p>
-      <p>固定同一请求 R，仅改变同批其他 prompt 的长度后发现：整批共享的 RoPE 表让 R 的图像帧位置随最长文本变化，由 17 变为 64。消融实验排除了编码器输出和注意力掩码路径；我在 #10376 中按各请求的有效文本长度修正帧位置，保留混合合批能力。<a href="https://github.com/vllm-project/vllm-omni/pull/10376">查看 PR #10376 ↗</a></p>
-      <p class="story-callout"><b>结果：</b>50 步等长与混合长度批次的 PSNR 从 <b>27.66 提高到 45.16 dB</b>，SSIM 从 0.964 提高到 0.997。批大小 2/3/4 的测试均改善，已测 SM120 配置下去噪每步耗时相同。</p>
+      <p class="kicker">03 · 从性能验证发现一致性问题 / PR #10376</p>
+      <h2>同一个生成请求，换一批一起运行的请求，出图就变了。</h2>
+      <h3 class="pr-subheading">问题</h3>
+      <p id="drift">验证 #9040 时发现，同一请求与更长的 prompt 合批后，生成图像会变。短 prompt 补齐到批内最大长度后，图像的 RoPE 起始位置也被推后，例如从 17 变为 64。</p>
+      <h3 class="pr-subheading">方法 · 用逐请求掩码修正 RoPE 帧位置</h3>
+      <p>把每个请求的文本有效掩码传给 RoPE 计算，从共享帧索引中减去该请求自己的左侧 padding 数。请求 R 因此从 64 回到 17，图像的高、宽轴频率仍在批内共享。这一修正保留混合长度合批，在 CUDA 上的多请求、有文本 padding 且未启用序列并行时生效。</p>
+      <h3 class="pr-subheading">结论</h3>
+      <p class="story-callout">50 步等长与混合长度批次的 PSNR 从 <b>27.66 提高到 45.16 dB</b>，SSIM 从 0.964 提高到 0.997。批大小 2/3/4 的测试均改善，已测 SM120 配置下去噪每步耗时相同。<a href="https://github.com/vllm-project/vllm-omni/pull/10376">查看 PR #10376 ↗</a></p>
       <figure class="evidence-figure"><a href="../assets/pr10376/fig4_diff_heatmap.png" target="_blank" rel="noreferrer"><img src="../assets/pr10376/fig4_diff_heatmap.png" alt="PR 10376 修复前后逐像素差分" loading="lazy"></a><figcaption>同一请求 R 在等长与混合长度 batch 中的像素绝对差，平均值 6.15 → 0.74。两图使用相同 0–64 截断色标，原像素范围为 0–255 · 点击查看原图</figcaption></figure>
       <figure class="evidence-figure"><a href="../assets/pr10376/fig5_batch_size_drift_speed.png" target="_blank" rel="noreferrer"><img src="../assets/pr10376/fig5_batch_size_drift_speed.png" alt="批大小变化时的 PSNR 和去噪每步耗时" loading="lazy"></a><figcaption>20 步 · 1024² · 每点 4 个 wave。左：相对等长参照的 PSNR；右：去噪每步耗时，非端到端请求延迟 · 点击查看原图</figcaption></figure>
       <details class="technical-details"><summary>展开定位过程：复现图、RoPE 机制、消融与测试边界</summary>    <section class="step">

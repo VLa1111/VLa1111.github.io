@@ -41,9 +41,13 @@
     .status { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
     .status > div { padding: 16px 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
     .status ul { margin: 8px 0 0; padding-left: 18px; font-size: 14px; color: var(--muted); }
+    .training-video { display: block; width: 100%; height: auto; border-radius: 8px; background: #161b22; }
+    .training-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .training-gallery .evidence-figure { margin: 0; }
     @media (max-width: 760px) {
       .two, .status { grid-template-columns: 1fr; }
       .phase dl { grid-template-columns: 1fr; }
+      .training-gallery { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -59,6 +63,29 @@
       <h1>无人机飞进陌生房间，<br>下一步该往哪飞？</h1>
       <p class="lede">无人机带着深度相机进入完全未知的环境，一边建图一边决定下一步去哪，目标是用尽量短的航程把空间扫完，而且不撞。这个项目把“去哪”交给一个学出来的价值网络：规划器先给出几条可执行的候选路径，网络给每条打分，飞分最高的那条。网络的老师是仿真里真实飞出来的结果。</p>
       <p class="meta">Isaac Sim 6 场景平均覆盖率 92.8% · 价值网络 489,762 参数 · 单决策 4.21 → 0.454 ms · 128 个并行环境</p>
+    </section>
+
+    <section class="step" id="training-demo">
+      <h2>Isaac Sim 并行训练演示</h2>
+      <p>视频记录了 56 个环境在 20 秒仿真时间内的运行。左侧是环境总览，右侧分别展示障碍场和迷宫中的无人机近景。</p>
+      <figure class="evidence-figure">
+        <video class="training-video" controls playsinline preload="none" poster="../assets/exprl/training-poster.jpg" width="1920" height="1080" aria-label="Isaac Sim 56 环境训练视频">
+          <source src="../assets/exprl/training-56env.mp4" type="video/mp4">
+          <a href="../assets/exprl/training-56env.mp4">打开训练视频</a>
+        </video>
+        <figcaption>56 个环境 · 20 秒 · 1080p</figcaption>
+      </figure>
+      <details id="training-scenes" open>
+        <summary>查看 6 张训练场景图</summary>
+        <div class="training-gallery">
+          <figure class="evidence-figure"><a href="../assets/exprl/01-four-scenes.webp"><img src="../assets/exprl/01-four-scenes.webp" alt="四个训练场景总览" loading="lazy"></a><figcaption>四个训练场景</figcaption></figure>
+          <figure class="evidence-figure"><a href="../assets/exprl/02-obstacle-field-top.webp"><img src="../assets/exprl/02-obstacle-field-top.webp" alt="障碍场俯视图" loading="lazy"></a><figcaption>障碍场俯视图</figcaption></figure>
+          <figure class="evidence-figure"><a href="../assets/exprl/03-maze-top.webp"><img src="../assets/exprl/03-maze-top.webp" alt="迷宫俯视图" loading="lazy"></a><figcaption>迷宫俯视图</figcaption></figure>
+          <figure class="evidence-figure"><a href="../assets/exprl/04-obstacle-field-perspective.webp"><img src="../assets/exprl/04-obstacle-field-perspective.webp" alt="障碍场透视图" loading="lazy"></a><figcaption>障碍场透视图</figcaption></figure>
+          <figure class="evidence-figure"><a href="../assets/exprl/05-maze-perspective.webp"><img src="../assets/exprl/05-maze-perspective.webp" alt="迷宫透视图" loading="lazy"></a><figcaption>迷宫透视图</figcaption></figure>
+          <figure class="evidence-figure"><a href="../assets/exprl/06-wall-depth-detail.webp"><img src="../assets/exprl/06-wall-depth-detail.webp" alt="墙体深度细节" loading="lazy"></a><figcaption>墙体深度细节</figcaption></figure>
+        </div>
+      </details>
     </section>
 
     <section class="step">
